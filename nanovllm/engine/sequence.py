@@ -12,10 +12,8 @@ class SequenceStatus(Enum):
 
 PlayloadType = TypeVar("PlayloadType")
 class Sequence(Generic[PlayloadType]):
-    counter = count()
-
-    def __init__(self, token_ids: list[int | bytes], block_size: int, custom_payload: PlayloadType = None):
-        self.seq_id = next(Sequence.counter)
+    def __init__(self, seq_id : str, token_ids: list[int | bytes], block_size: int, custom_payload: PlayloadType = None):
+        self.seq_id = seq_id
         self.status = SequenceStatus.WAITING
         self.token_ids = copy(token_ids)
         self.num_tokens = len(self.token_ids)

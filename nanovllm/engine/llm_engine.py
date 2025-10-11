@@ -30,8 +30,11 @@ class LLMEngineBase:
         for p in self.ps:
             p.join()
 
-    def add_request_seq(self, seq : Sequence):
+    def add_sequence(self, seq : Sequence):
         self.scheduler.add(seq)
+    
+    def cancel_sequence(self, seq_id: str):
+        self.scheduler.cancel(seq_id)
 
     def step(self):
         seqs, is_prefill = self.scheduler.schedule()

@@ -4,6 +4,7 @@ from nanovllm.config import Config
 from nanovllm.engine.sequence import Sequence, SequenceStatus
 from nanovllm.engine.block_manager import BlockManager
 
+import uuid
 
 class Scheduler:
 
@@ -14,11 +15,28 @@ class Scheduler:
         self.waiting: deque[Sequence] = deque()
         self.running: deque[Sequence] = deque()
 
+        self._id_to_seq: dict[str, Sequence] = {}
+
     def is_finished(self):
         return not self.waiting and not self.running
 
     def add(self, seq: Sequence):
+        self._id_to_seq[seq.seq_id] = seq
+
         self.waiting.append(seq)
+    
+    def cancel(self, seq_id: str):
+        try:
+            seq = self._id_to_seq.pop(seq_id)
+        except KeyError:
+            return
+
+        self.block_manager.deallocate(seq)
+        if seq.status == SequenceStatus.RUNNING:
+            self.running.remove(seq)
+        elif seq.status == SequenceStatus.WAITING:
+            self.waiting.remove(seq)
+        return
 
     def schedule(self) -> tuple[list[Sequence], bool]:
         # prefill
@@ -65,3 +83,4 @@ class Scheduler:
         seq.status = SequenceStatus.FINISHED
         self.block_manager.deallocate(seq)
         self.running.remove(seq)
+        self._id_to_seq.pop(seq.seq_id)

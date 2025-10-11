@@ -11,6 +11,8 @@ def default_weight_loader(param: nn.Parameter, loaded_weight: torch.Tensor):
 
 def load_model(model: nn.Module, path: str):
     packed_modules_mapping = getattr(model, "packed_modules_mapping", {})
+
+    visited_param_names = set()
     for file in glob(os.path.join(path, "*.safetensors")):
         with safe_open(file, "pt", "cpu") as f:
             for weight_name in f.keys():
@@ -21,8 +23,18 @@ def load_model(model: nn.Module, path: str):
                         param = model.get_parameter(param_name)
                         weight_loader = getattr(param, "weight_loader")
                         weight_loader(param, f.get_tensor(weight_name), shard_id)
+                        visited_param_names.add(param_name)
                         break
                 else:
                     param = model.get_parameter(weight_name)
                     weight_loader = getattr(param, "weight_loader", default_weight_loader)
                     weight_loader(param, f.get_tensor(weight_name))
+                    visited_param_names.add(weight_name)
+    
+    missing_param_names = []
+    for name, _ in model.named_parameters():
+        if name not in visited_param_names:
+            missing_param_names.append(name)
+    
+    if missing_param_names:
+        raise ValueError(f"Missing parameters: {missing_param_names}")

@@ -73,8 +73,8 @@ class VoxCPMRunner(BaseModelRunner):
             "stop_flag": stop_flag,
         }
     
-    def encode_latents(self, waveform : np.ndarray) -> np.ndarray:
-        wav = torch.from_numpy(waveform).cuda(non_blocking=True).unsqueeze(0)
+    def encode_latents(self, wav : torch.Tensor) -> np.ndarray:
+        assert wav.ndim == 2, "Invalid shape of wav"
         return self.vae.encode(wav, self.vae.sample_rate).permute(0, 2, 1).view(-1, self.feat_dim).cpu().numpy()
     
     def run(self, seqs: list[RunnerTask[VoxCPMPayload]], is_prefill: bool):

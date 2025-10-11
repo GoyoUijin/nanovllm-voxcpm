@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import numpy as np
 from transformers import LlamaTokenizerFast
 from nanovllm.models.voxcpm.utils import mask_multichar_chinese_tokens
+import torch
 
 
 @dataclass
@@ -28,7 +29,7 @@ class VoxCPMSeqPayload:
 
 class VoxCPMEngine(LLMEngineBase):
     def __init__(self, config: Config[VoxCPMConfig]):
-        self.n_decode_pad_frames = 3
+        self.n_decode_pad_frames = 4
         self.feat_dim = config.model_config.feat_dim
         self.patch_size = config.model_config.patch_size
         self.chunk_size = 640
@@ -103,9 +104,10 @@ class VoxCPMEngine(LLMEngineBase):
 
     def add_request(
             self,
+            seq_id : str,
             target_text : str,
             prompt_text : str = "",
-            prompt_wav : np.ndarray = None,
+            prompt_latents : np.ndarray = None,
             max_generate_length : int = 2000,
             temperature : float = 1.0,
             cfg_value : float = 1.0,
@@ -119,16 +121,8 @@ class VoxCPMEngine(LLMEngineBase):
 
         decode_pad = None
 
-        if prompt_wav is not None:
-            if prompt_wav.ndim != 1:
-                raise ValueError("prompt_wav must be 1D array")
-            
-            n_pad_to = self.patch_size * self.chunk_size
-            if prompt_wav.shape[0] % n_pad_to != 0:
-                remained = n_pad_to - prompt_wav.shape[0] % n_pad_to
-                prompt_wav = np.pad(prompt_wav, (remained, 0), mode="constant", constant_values=0)
-
-            wav_latents = self.model_runner.encode_latents(prompt_wav)
+        if prompt_latents is not None:
+            wav_latents = prompt_latents
             decode_pad = wav_latents[-self.n_decode_pad_frames:]
             
             wav_latents = wav_latents.reshape(-1, self.patch_size, self.feat_dim)
@@ -140,6 +134,7 @@ class VoxCPMEngine(LLMEngineBase):
                 hash_tokens.append(wav_latents[i].tobytes())
 
         seq = Sequence(
+            seq_id,
             hash_tokens,
             self.block_size,
             VoxCPMSeqPayload(
@@ -154,10 +149,7 @@ class VoxCPMEngine(LLMEngineBase):
             )
         )
 
-        self.add_request_seq(seq)
+        self.add_sequence(seq)
 
-    def test_work(self):
-        outputs = {}
-        while not self.is_finished():
-            output = self.step()
-        return output
+    def encode_latents(self, wav : torch.Tensor) -> np.ndarray:
+        return self.model_runner.encode_latents(wav)
