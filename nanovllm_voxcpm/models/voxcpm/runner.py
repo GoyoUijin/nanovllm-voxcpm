@@ -27,11 +27,11 @@ class VoxCPMPayload:
 
 
 class VoxCPMRunner(BaseModelRunner):
-    def __init__(self, config: Config[VoxCPMConfig], rank: int, event: Event | list[Event]):
+    def __init__(self, config: Config[VoxCPMConfig], rank: int, device_idx : int, distributed_port: int, event: Event | list[Event]):
         self.inference_timesteps = config.model_config.inference_timesteps
         self.feat_dim = config.model_config.feat_dim
         self.patch_size = config.model_config.patch_size
-        super().__init__(config, rank, event)
+        super().__init__(config, rank, device_idx, distributed_port, event)
     
     @property
     def dtype(self) -> torch.dtype:
@@ -75,7 +75,7 @@ class VoxCPMRunner(BaseModelRunner):
     
     def encode_latents(self, wav : torch.Tensor) -> np.ndarray:
         assert wav.ndim == 2, "Invalid shape of wav"
-        return self.vae.encode(wav, self.vae.sample_rate).permute(0, 2, 1).view(-1, self.feat_dim).cpu().numpy()
+        return self.vae.encode(wav, self.vae.sample_rate).permute(0, 2, 1).view(-1, self.feat_dim).to(torch.float32).cpu().numpy()
     
     def run(self, seqs: list[RunnerTask[VoxCPMPayload]], is_prefill: bool):
         positions = self.prepare_prefill_context(seqs) if is_prefill else self.prepare_decode_context(seqs)

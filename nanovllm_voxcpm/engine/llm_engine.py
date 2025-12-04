@@ -5,22 +5,43 @@ from nanovllm_voxcpm.config import Config
 from nanovllm_voxcpm.engine.sequence import Sequence
 from nanovllm_voxcpm.engine.scheduler import Scheduler
 from nanovllm_voxcpm.engine.model_runner import RunnerTask, BaseModelRunner
+import socket
+import torch
+
+def get_distributed_port():
+    # find a free port
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("localhost", 0))
+        return s.getsockname()[1]
+
 
 class LLMEngineBase:
     model_runner : BaseModelRunner
     scheduler : Scheduler
     
     def __init__(self, RunnerType : type[BaseModelRunner], config: Config, tensor_parallel_size: int):
+        
+        self.distributed_port = get_distributed_port()
+
+        if config.devices is None or len(config.devices) == 0:
+            n_devices = torch.cuda.get_device_count()
+            if tensor_parallel_size > n_devices:
+                raise ValueError(f"Tensor parallel size {tensor_parallel_size} is greater than the number of available devices {n_devices}")
+            config.devices = list(range(tensor_parallel_size))
+
+        if len(config.devices) != tensor_parallel_size:
+            raise ValueError(f"Number of devices {len(config.devices)} is not equal to tensor parallel size {tensor_parallel_size}")
+
         self.ps = []
         self.events = []
         ctx = mp.get_context("spawn")
         for i in range(1, tensor_parallel_size):
             event = ctx.Event()
-            process = ctx.Process(target=RunnerType, args=(config, i, event))
+            process = ctx.Process(target=RunnerType, args=(config, i, config.devices[i], self.distributed_port, event))
             process.start()
             self.ps.append(process)
             self.events.append(event)
-        self.model_runner = RunnerType(config, 0, self.events)
+        self.model_runner = RunnerType(config, 0, config.devices[0], self.distributed_port, self.events)
         self.scheduler = Scheduler(config)
         atexit.register(self.exit)
 

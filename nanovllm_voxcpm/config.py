@@ -1,7 +1,7 @@
 import os
 from dataclasses import dataclass
 from pydantic import BaseModel
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, List
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -18,7 +18,7 @@ class Config(Generic[T]):
     num_kvcache_blocks: int = -1
 
     model_config: T | None = None
-    distributed_port : int = 2333
+    devices : List[int] | None = None
 
     def __post_init__(self):
         assert os.path.isdir(self.model)

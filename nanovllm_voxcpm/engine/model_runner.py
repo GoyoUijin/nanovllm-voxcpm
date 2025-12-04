@@ -52,7 +52,7 @@ def assign_outputs(inputs, outputs, bs):
 class BaseModelRunner:
     model : torch.nn.Module
 
-    def __init__(self, config: Config, rank: int, event: Event | list[Event]):
+    def __init__(self, config: Config, rank: int, device_idx : int, distributed_port: int, event: Event | list[Event]):
         self._config = config
         self.block_size = config.kvcache_block_size
         self.enforce_eager = config.enforce_eager
@@ -60,8 +60,8 @@ class BaseModelRunner:
         self.rank = rank
         self.event = event
 
-        dist.init_process_group("nccl", "tcp://localhost:{}".format(config.distributed_port), world_size=self.world_size, rank=rank)
-        torch.cuda.set_device(rank)
+        dist.init_process_group("nccl", "tcp://localhost:{}".format(distributed_port), world_size=self.world_size, rank=rank)
+        torch.cuda.set_device(device_idx)
         default_dtype = torch.get_default_dtype()
         torch.set_default_dtype(self.dtype)
         torch.set_default_device("cuda")
@@ -75,11 +75,11 @@ class BaseModelRunner:
 
         if self.world_size > 1:
             if rank == 0:
-                self.shm = SharedMemory(name="nanovllm", create=True, size=2**20)
+                self.shm = SharedMemory(name=f"nanovllm-{distributed_port}", create=True, size=2**20)
                 dist.barrier()
             else:
                 dist.barrier()
-                self.shm = SharedMemory(name="nanovllm")
+                self.shm = SharedMemory(name=f"nanovllm-{distributed_port}")
                 self.loop()
 
     @property

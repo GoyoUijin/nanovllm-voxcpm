@@ -53,7 +53,7 @@ class GenerateRequest(BaseModel):
     prompt_id : str | None = None
     max_generate_length : int = 2000
     temperature : float = 1.0
-    cfg_value : float = 2.0
+    cfg_value : float = 1.5
 
 
 async def numpy_to_bytes(gen) :

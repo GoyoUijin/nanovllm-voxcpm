@@ -1,4 +1,3 @@
-from huggingface_hub import snapshot_download
 from nanovllm_voxcpm.models.voxcpm.engine import VoxCPMEngine, VoxCPMConfig, Config
 import os
 import torch.multiprocessing as mp
@@ -9,30 +8,24 @@ import torchaudio
 import io
 import torch
 import asyncio
+from typing import List
+import numpy as np
+import random
 
 def gen_uuid() -> str:
     return uuid.uuid4().hex
 
 class VoxCPMServerImpl:
     def __init__(self,
-        model : str,
+        model_path : str,
         inference_timesteps : int = 10,
         max_num_batched_tokens : int = 16384,
         max_num_seqs : int = 512,
         max_model_len : int = 4096,
         gpu_memory_utilization: float = 0.9,
         enforce_eager: bool = False,
+        devices : List[int] = [],
     ):
-        if "~" in model:
-            model_path = os.path.expanduser(model)
-            if not os.path.isdir(model_path):
-                raise ValueError(f"Model path {model_path} does not exist")
-        else:
-            if not os.path.isdir(model):
-                model_path = snapshot_download(repo_id=model)
-            else:
-                model_path = model
-
         model_config = VoxCPMConfig.model_validate_json(
             open(os.path.join(model_path, "config.json")).read()
         )
@@ -47,18 +40,18 @@ class VoxCPMServerImpl:
             gpu_memory_utilization=gpu_memory_utilization,
             enforce_eager=enforce_eager,
             model_config=model_config,
+            devices=devices,
         )
 
         self.llm = VoxCPMEngine(engine_config)
         self.sample_rate = self.llm.model_runner.vae.sample_rate
-        self._prompt_map = {}
 
     def health(self):
         return {
             "status": "ok",
         }
     
-    def add_prompt(self, wav : bytes, wav_format : str, prompt_text : str):
+    def encode_latents(self, wav : bytes, wav_format : str):
         wav, sr = torchaudio.load(io.BytesIO(wav), format=wav_format)
         wav = wav.cuda()
         if sr != self.sample_rate:
@@ -74,35 +67,27 @@ class VoxCPMServerImpl:
 
         latents = self.llm.encode_latents(wav)
         assert latents.shape[0] % self.llm.patch_size == 0
-        prompt_id = gen_uuid()
-
-        self._prompt_map[prompt_id] = {
-            "latents": latents,
-            "prompt_text": prompt_text,
-        }
-
-        return prompt_id
-    
-    def remove_prompt(self, prompt_id : str):
-        del self._prompt_map[prompt_id]
+        
+        return latents.tobytes()
 
     def add_request(self,
         seq_id : str,
         target_text : str,
-        prompt_id : str | None = None,
+        prompt_latents : bytes | None = None,
+        prompt_text : str = "",
         max_generate_length : int = 2000,
         temperature : float = 1.0,
         cfg_value : float = 1.0
     ):
-        if prompt_id is not None:
-            if prompt_id not in self._prompt_map:
-                raise ValueError(f"Prompt id {prompt_id} not found")
+        if prompt_latents is not None:
+            if len(prompt_text) == 0:
+                raise ValueError("Prompt text is required when prompt latents are provided")
             
-            prompt_latents = self._prompt_map[prompt_id]["latents"]
-            prompt_text = self._prompt_map[prompt_id]["prompt_text"]
+            prompt_latents = np.frombuffer(prompt_latents, dtype=np.float32).reshape(-1, self.llm.feat_dim)
         else:
             prompt_latents = None
-            prompt_text = ""
+            if len(prompt_text) > 0:
+                raise ValueError("Prompt text is not allowed when prompt latents are not provided")
         
         self.llm.add_request(
             seq_id=seq_id,
@@ -204,20 +189,25 @@ def main_loop(
 
 class AsyncVoxCPMServer:
     def __init__(self,
-        model : str,
+        model_path : str,
         inference_timesteps : int = 10,
         max_num_batched_tokens : int = 16384,
         max_num_seqs : int = 512,
         max_model_len : int = 4096,
         gpu_memory_utilization: float = 0.9,
         enforce_eager: bool = False,
+        devices : List[int] = [],
+        **kwargs,
     ):
+        if len(kwargs) > 0:
+            raise ValueError(f"Unknown kwargs: {kwargs}")
+
         ctx = mp.get_context("spawn")
         self.queue_in = ctx.Queue()
         self.queue_out = ctx.Queue()
         self.process = ctx.Process(
             target=main_loop, 
-            args=(self.queue_in, self.queue_out, (model, inference_timesteps, max_num_batched_tokens, max_num_seqs, max_model_len, gpu_memory_utilization, enforce_eager), {}),
+            args=(self.queue_in, self.queue_out, (model_path, inference_timesteps, max_num_batched_tokens, max_num_seqs, max_model_len, gpu_memory_utilization, enforce_eager, devices), {}),
             daemon=True,
         )
         self.process.start()
@@ -271,19 +261,19 @@ class AsyncVoxCPMServer:
     async def wait_for_ready(self):
         await self.health()
     
-    async def add_prompt(self, wav : bytes, wav_format : str, prompt_text : str):
-        return await self.submit("add_prompt", wav, wav_format, prompt_text)
-    
-    async def remove_prompt(self, prompt_id : str):
-        return await self.submit("remove_prompt", prompt_id)
+    async def encode_latents(self, wav : bytes, wav_format : str):
+        return await self.submit("encode_latents", wav, wav_format)
     
     async def stop(self):
-        return await self.submit("stop")
+        await self.submit("stop")
+        self.recv_task.cancel()
+        await asyncio.to_thread(self.process.join)
     
     async def generate(
         self,
         target_text : str,
-        prompt_id : str | None = None,
+        prompt_latents : bytes | None = None,
+        prompt_text : str = "",
         max_generate_length : int = 2000,
         temperature : float = 1.0,
         cfg_value : float = 2.0
@@ -293,7 +283,7 @@ class AsyncVoxCPMServer:
 
         is_normal_exit = False
         try:
-            await self.submit("add_request", seq_id, target_text, prompt_id, max_generate_length, temperature, cfg_value)
+            await self.submit("add_request", seq_id, target_text, prompt_latents, prompt_text, max_generate_length, temperature, cfg_value)
 
             while True:
                 data = await self.stream_table[seq_id].get()
@@ -305,3 +295,147 @@ class AsyncVoxCPMServer:
             if not is_normal_exit:
                 await self.submit("cancel", seq_id)
             del self.stream_table[seq_id]
+
+
+class AsyncVoxCPMServerPool:
+    def __init__(self,
+        model_path : str,
+        inference_timesteps : int = 10,
+        max_num_batched_tokens : int = 16384,
+        max_num_seqs : int = 512,
+        max_model_len : int = 4096,
+        gpu_memory_utilization: float = 0.9,
+        enforce_eager: bool = False,
+        devices : List[int] = [],
+        **kwargs,
+    ):
+        if len(kwargs) > 0:
+            raise ValueError(f"Unknown kwargs: {kwargs}")
+
+        self.servers = [
+            AsyncVoxCPMServer(
+                model_path=model_path,
+                inference_timesteps=inference_timesteps,
+                max_num_batched_tokens=max_num_batched_tokens,
+                max_num_seqs=max_num_seqs,
+                max_model_len=max_model_len,
+                gpu_memory_utilization=gpu_memory_utilization,
+                enforce_eager=enforce_eager,
+                devices=[device_idx],
+            )
+            for device_idx in devices
+        ]
+        
+        self.servers_load = np.zeros(len(self.servers), dtype=np.int32)
+
+        self._prompt_pool = {}
+
+    async def wait_for_ready(self):
+        await asyncio.gather(*[server.wait_for_ready() for server in self.servers])
+    
+    async def stop(self):
+        await asyncio.gather(*[server.stop() for server in self.servers])
+    
+    async def encode_latents(self, wav : bytes, wav_format : str):
+        # send to one
+        min_load_server_idx = np.argmin(self.servers_load)
+        return await self.servers[min_load_server_idx].encode_latents(wav, wav_format)
+    
+    async def add_prompt(self, wav : bytes, wav_format : str, prompt_text : str):
+        prompt_id = gen_uuid()
+        prompt_latents = await self.encode_latents(wav, wav_format)
+        self._prompt_pool[prompt_id] = {
+            "latents": prompt_latents,
+            "text": prompt_text,
+        }
+        return prompt_id
+    
+    async def remove_prompt(self, prompt_id : str):
+        del self._prompt_pool[prompt_id]
+    
+    async def generate(
+        self,
+        target_text : str,
+        prompt_latents : bytes | None = None,
+        prompt_text : str = "",
+        prompt_id : str | None = None,
+        max_generate_length : int = 2000,
+        temperature : float = 1.0,
+        cfg_value : float = 2.0
+    ):
+        if prompt_id is not None:
+            if prompt_id not in self._prompt_pool:
+                raise ValueError(f"Prompt with id {prompt_id} not found")
+            if prompt_latents is not None:
+                raise ValueError("Prompt latents and prompt id cannot be provided at the same time")
+            if len(prompt_text) > 0:
+                raise ValueError("Prompt text and prompt id cannot be provided at the same time")
+
+            prompt_info = self._prompt_pool[prompt_id]
+            prompt_latents = prompt_info["latents"]
+            prompt_text = prompt_info["text"]
+
+        min_load_server_idx = np.argmin(self.servers_load)
+        self.servers_load[min_load_server_idx] += 1
+
+        server = self.servers[min_load_server_idx]
+
+        try:
+            async for data in server.generate(target_text, prompt_latents, prompt_text, max_generate_length, temperature, cfg_value):
+                yield data
+        finally:
+            self.servers_load[min_load_server_idx] -= 1
+
+class SyncVoxCPMServerPool:
+    def __init__(self, 
+            model_path : str,
+            inference_timesteps : int = 10,
+            max_num_batched_tokens : int = 16384,
+            max_num_seqs : int = 512,
+            max_model_len : int = 4096,
+            gpu_memory_utilization: float = 0.9,
+            enforce_eager: bool = False,
+            devices : List[int] = [],
+            **kwargs,
+        ):
+        async def init_async_server_pool():
+            return AsyncVoxCPMServerPool(
+                model_path=model_path,
+                inference_timesteps=inference_timesteps,
+                max_num_batched_tokens=max_num_batched_tokens,
+                max_num_seqs=max_num_seqs,
+                max_model_len=max_model_len,
+                gpu_memory_utilization=gpu_memory_utilization,
+                enforce_eager=enforce_eager,
+                devices=devices,
+                **kwargs,
+            )
+
+        self.loop = asyncio.new_event_loop()
+        self.server_pool = self.loop.run_until_complete(init_async_server_pool())
+        self.loop.run_until_complete(self.server_pool.wait_for_ready())
+    
+    def stop(self):
+        self.loop.run_until_complete(self.server_pool.stop())
+        self.loop.close()
+        self.loop = None
+
+    def encode_latents(self, wav : bytes, wav_format : str):
+        return self.loop.run_until_complete(self.server_pool.encode_latents(wav, wav_format))
+    
+    def add_prompt(self, wav : bytes, wav_format : str, prompt_text : str):
+        return self.loop.run_until_complete(self.server_pool.add_prompt(wav, wav_format, prompt_text))
+    
+    def remove_prompt(self, prompt_id : str):
+        return self.loop.run_until_complete(self.server_pool.remove_prompt(prompt_id))
+    
+    def generate(self, target_text : str, prompt_latents : bytes | None = None, prompt_text : str = "", prompt_id : str | None = None, max_generate_length : int = 2000, temperature : float = 1.0, cfg_value : float = 2.0):
+        async_gen = self.server_pool.generate(target_text, prompt_latents, prompt_text, prompt_id, max_generate_length, temperature, cfg_value)
+        try:
+            while True:
+                item = self.loop.run_until_complete(async_gen.__anext__())
+                yield item
+        except StopAsyncIteration:
+            return
+
+    

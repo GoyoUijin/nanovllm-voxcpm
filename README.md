@@ -7,6 +7,15 @@ Features:
 - Support concurrent requests
 - Friendly async API, easy to use in FastAPI (see [fastapi/app.py](fastapi/app.py))
 
+## Installation
+
+Nano-vLLM-VoxCPM is not available on PyPI yet, you need to install it from source.
+
+```
+git clone https://github.com/a710128/nanovllm-voxcpm.git
+cd nanovllm-voxcpm
+pip install -e .
+```
 
 ## Basic Usage
 
