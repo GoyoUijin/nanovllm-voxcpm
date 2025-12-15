@@ -162,5 +162,5 @@ class VoxCPMEngine(LLMEngineBase):
             align_size = self.patch_size * self.model_runner.vae.chunk_size
         if wav.size(1) % align_size != 0:
             remained = align_size - wav.size(1) % align_size
-            wav = torch.nn.functional.pad(wav, (0, remained))
+            wav = torch.nn.functional.pad(wav, (remained, 0))
         return self.model_runner.encode_latents(wav)
