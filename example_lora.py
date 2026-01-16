@@ -30,7 +30,6 @@ async def main():
         enable_dit=True,
         r=LORA_R,
         alpha=LORA_ALPHA,
-        dropout=0.0,
         target_modules_lm=["q_proj", "k_proj", "v_proj", "o_proj"],
         target_modules_dit=["q_proj", "k_proj", "v_proj", "o_proj"],
     )

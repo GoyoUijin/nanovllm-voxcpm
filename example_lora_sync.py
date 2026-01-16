@@ -30,7 +30,6 @@ def main():
         enable_proj=False,  # Projection layer LoRA
         r=LORA_R,
         alpha=LORA_ALPHA,
-        dropout=0.0,
         target_modules_lm=["q_proj", "k_proj", "v_proj", "o_proj"],
         target_modules_dit=["q_proj", "k_proj", "v_proj", "o_proj"],
         target_proj_modules=["enc_to_lm_proj", "lm_to_dit_proj", "res_to_dit_proj"],

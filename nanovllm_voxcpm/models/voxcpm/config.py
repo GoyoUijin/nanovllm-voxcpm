@@ -71,7 +71,6 @@ class LoRAConfig(BaseModel):
         enable_proj: Apply LoRA to projection Linear layers
         r: LoRA rank (low-rank dimension)
         alpha: LoRA scaling factor (scaling = alpha / r)
-        dropout: LoRA dropout rate
         target_modules_lm: Target modules in LM layers (e.g., ["q_proj", "k_proj", "v_proj", "o_proj"])
         target_modules_dit: Target modules in DiT layers
         target_proj_modules: Projection layer names to apply LoRA
@@ -81,7 +80,6 @@ class LoRAConfig(BaseModel):
     enable_proj: bool = False
     r: int = 32
     alpha: float = 16.0
-    dropout: float = 0.0
     target_modules_lm: List[str] = ["q_proj", "k_proj", "v_proj", "o_proj"]
     target_modules_dit: List[str] = ["q_proj", "k_proj", "v_proj", "o_proj"]
     target_proj_modules: List[str] = ["enc_to_lm_proj", "lm_to_dit_proj", "res_to_dit_proj"]

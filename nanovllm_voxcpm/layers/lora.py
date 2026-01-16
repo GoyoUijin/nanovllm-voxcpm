@@ -6,7 +6,6 @@ Supports:
 - Enable/disable without recompiling CUDA Graph
 - Tensor parallel compatible
 """
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -38,7 +37,6 @@ class LoRAQKVParallelLinear(nn.Module):
         bias: bool = False,
         lora_r: int = 0,
         lora_alpha: float = 16.0,
-        lora_dropout: float = 0.0,
         lora_targets: list = None,  # ["q", "k", "v"]
     ):
         super().__init__()
@@ -75,7 +73,6 @@ class LoRAQKVParallelLinear(nn.Module):
             
             # Fused input projection: all targets share one lora_A
             self.lora_A = nn.Parameter(torch.zeros(lora_r * n_targets, hidden_size))
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
             
             # Separated output projections (need to be sharded by TP)
             if "q" in self.lora_targets:
@@ -95,8 +92,6 @@ class LoRAQKVParallelLinear(nn.Module):
                 torch.tensor(self._base_scaling), 
                 persistent=False
             )
-            
-            self.lora_dropout = nn.Dropout(lora_dropout) if lora_dropout > 0 else nn.Identity()
         else:
             self.lora_r = 0
     
@@ -142,7 +137,7 @@ class LoRAQKVParallelLinear(nn.Module):
             return qkv
         
         # Fused LoRA input projection
-        lora_hidden = self.lora_dropout(F.linear(x, self.lora_A))  # [batch, seq, r * n_targets]
+        lora_hidden = F.linear(x, self.lora_A)  # [batch, seq, r * n_targets]
         
         # Separate outputs and compute respective lora_B
         q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
@@ -172,15 +167,14 @@ class LoRAQKVParallelLinear(nn.Module):
         return self.lora_r > 0 and self.lora_scaling.item() != 0.0
     
     def reset_lora_parameters(self):
-        """Reset LoRA parameters to initial state"""
+        """Reset LoRA parameters (set lora_B to zero to disable LoRA output)"""
         if self.lora_r > 0:
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
             if hasattr(self, 'lora_B_q'):
-                nn.init.zeros_(self.lora_B_q)
+                self.lora_B_q.data.zero_()
             if hasattr(self, 'lora_B_k'):
-                nn.init.zeros_(self.lora_B_k)
+                self.lora_B_k.data.zero_()
             if hasattr(self, 'lora_B_v'):
-                nn.init.zeros_(self.lora_B_v)
+                self.lora_B_v.data.zero_()
 
 
 class LoRAMergedColumnParallelLinear(nn.Module):
@@ -197,7 +191,6 @@ class LoRAMergedColumnParallelLinear(nn.Module):
         bias: bool = False,
         lora_r: int = 0,
         lora_alpha: float = 16.0,
-        lora_dropout: float = 0.0,
         lora_targets: list = None,  # [0, 1] for gate and up
     ):
         super().__init__()
@@ -228,7 +221,6 @@ class LoRAMergedColumnParallelLinear(nn.Module):
             
             # Fused input projection
             self.lora_A = nn.Parameter(torch.zeros(lora_r * n_targets, input_size))
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
             
             # Separated output projections
             for i, target_idx in enumerate(self.lora_targets):
@@ -243,8 +235,6 @@ class LoRAMergedColumnParallelLinear(nn.Module):
                 torch.tensor(self._base_scaling), 
                 persistent=False
             )
-            
-            self.lora_dropout = nn.Dropout(lora_dropout) if lora_dropout > 0 else nn.Identity()
         else:
             self.lora_r = 0
     
@@ -281,7 +271,7 @@ class LoRAMergedColumnParallelLinear(nn.Module):
             return result
         
         # Fused LoRA input projection
-        lora_hidden = self.lora_dropout(F.linear(x, self.lora_A))
+        lora_hidden = F.linear(x, self.lora_A)
         
         # Split result and apply respective lora_B
         splits = list(result.split(self.shard_output_sizes, dim=-1))
@@ -302,10 +292,10 @@ class LoRAMergedColumnParallelLinear(nn.Module):
         return self.lora_r > 0 and self.lora_scaling.item() != 0.0
     
     def reset_lora_parameters(self):
+        """Reset LoRA parameters (set lora_B to zero to disable LoRA output)"""
         if self.lora_r > 0:
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
             for target_idx in self.lora_targets:
-                nn.init.zeros_(getattr(self, f'lora_B_{target_idx}'))
+                getattr(self, f'lora_B_{target_idx}').data.zero_()
 
 
 class LoRARowParallelLinear(nn.Module):
@@ -322,7 +312,6 @@ class LoRARowParallelLinear(nn.Module):
         bias: bool = False,
         lora_r: int = 0,
         lora_alpha: float = 16.0,
-        lora_dropout: float = 0.0,
     ):
         super().__init__()
         self.tp_size = dist.get_world_size()
@@ -347,7 +336,6 @@ class LoRARowParallelLinear(nn.Module):
         if lora_r > 0:
             # lora_A input dimension needs to be sharded
             self.lora_A = nn.Parameter(torch.zeros(lora_r, self.shard_input_size))
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
             self.lora_A.weight_loader = self._lora_A_weight_loader
             
             # lora_B output dimension not sharded
@@ -359,8 +347,6 @@ class LoRARowParallelLinear(nn.Module):
                 torch.tensor(self._base_scaling), 
                 persistent=False
             )
-            
-            self.lora_dropout = nn.Dropout(lora_dropout) if lora_dropout > 0 else nn.Identity()
         else:
             self.lora_r = 0
     
@@ -383,7 +369,7 @@ class LoRARowParallelLinear(nn.Module):
         y = F.linear(x, self.weight, self.bias if self.tp_rank == 0 else None)
         
         if self.lora_r > 0:
-            lora_out = self.lora_dropout(F.linear(x, self.lora_A))
+            lora_out = F.linear(x, self.lora_A)
             lora_out = F.linear(lora_out, self.lora_B) * self.lora_scaling
             y = y + lora_out
         
@@ -400,9 +386,9 @@ class LoRARowParallelLinear(nn.Module):
         return self.lora_r > 0 and self.lora_scaling.item() != 0.0
     
     def reset_lora_parameters(self):
+        """Reset LoRA parameters (set lora_B to zero to disable LoRA output)"""
         if self.lora_r > 0:
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-            nn.init.zeros_(self.lora_B)
+            self.lora_B.data.zero_()
 
 
 class LoRALinear(nn.Module):
@@ -419,7 +405,6 @@ class LoRALinear(nn.Module):
         bias: bool = True,
         lora_r: int = 0,
         lora_alpha: float = 16.0,
-        lora_dropout: float = 0.0,
     ):
         super().__init__()
         self.in_features = in_features
@@ -439,8 +424,6 @@ class LoRALinear(nn.Module):
         if lora_r > 0:
             self.lora_A = nn.Parameter(torch.zeros(lora_r, in_features))
             self.lora_B = nn.Parameter(torch.zeros(out_features, lora_r))
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-            nn.init.zeros_(self.lora_B)
             
             self._base_scaling = lora_alpha / lora_r
             self.register_buffer(
@@ -448,8 +431,6 @@ class LoRALinear(nn.Module):
                 torch.tensor(self._base_scaling), 
                 persistent=False
             )
-            
-            self.lora_dropout = nn.Dropout(lora_dropout) if lora_dropout > 0 else nn.Identity()
         else:
             self.lora_r = 0
     
@@ -457,7 +438,7 @@ class LoRALinear(nn.Module):
         y = F.linear(x, self.weight, self.bias)
         
         if self.lora_r > 0:
-            lora_out = self.lora_dropout(F.linear(x, self.lora_A))
+            lora_out = F.linear(x, self.lora_A)
             lora_out = F.linear(lora_out, self.lora_B) * self.lora_scaling
             y = y + lora_out
         
@@ -472,9 +453,9 @@ class LoRALinear(nn.Module):
         return self.lora_r > 0 and self.lora_scaling.item() != 0.0
     
     def reset_lora_parameters(self):
+        """Reset LoRA parameters (set lora_B to zero to disable LoRA output)"""
         if self.lora_r > 0:
-            nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
-            nn.init.zeros_(self.lora_B)
+            self.lora_B.data.zero_()
 
 
 # ============================================================================
@@ -496,7 +477,7 @@ def set_all_lora_enabled(model: nn.Module, enabled: bool):
 
 
 def reset_all_lora_parameters(model: nn.Module):
-    """Reset all LoRA parameters in the model"""
+    """Reset all LoRA parameters (set lora_B to zero for hot-swapping)"""
     for module in iter_lora_modules(model):
         module.reset_lora_parameters()
 

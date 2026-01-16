@@ -200,7 +200,6 @@ class Cpm4Attention(nn.Module):
         # Determine LoRA parameters for attention projections
         lora_r = lora_config.r if lora_config else 0
         lora_alpha = lora_config.alpha if lora_config else 16.0
-        lora_dropout = lora_config.dropout if lora_config else 0.0
         lora_targets = lora_config.target_modules_lm if lora_config else []
         
         # QKV projection with optional LoRA
@@ -214,7 +213,6 @@ class Cpm4Attention(nn.Module):
                 bias=qkv_bias,
                 lora_r=lora_r,
                 lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
                 lora_targets=qkv_lora_targets,
             )
         else:
@@ -234,7 +232,6 @@ class Cpm4Attention(nn.Module):
                 bias=qkv_bias,
                 lora_r=lora_r,
                 lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
             )
         else:
             self.o_proj = RowParallelLinear(
@@ -332,7 +329,6 @@ class Cpm4MLP(nn.Module):
         # Determine LoRA parameters for MLP projections
         lora_r = lora_config.r if lora_config else 0
         lora_alpha = lora_config.alpha if lora_config else 16.0
-        lora_dropout = lora_config.dropout if lora_config else 0.0
         lora_targets = lora_config.target_modules_lm if lora_config else []
         
         # gate_up_proj with optional LoRA
@@ -349,7 +345,6 @@ class Cpm4MLP(nn.Module):
                 bias=False,
                 lora_r=lora_r,
                 lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
                 lora_targets=gate_up_lora_targets,
             )
         else:
@@ -367,7 +362,6 @@ class Cpm4MLP(nn.Module):
                 bias=False,
                 lora_r=lora_r,
                 lora_alpha=lora_alpha,
-                lora_dropout=lora_dropout,
             )
         else:
             self.down_proj = RowParallelLinear(
@@ -556,7 +550,6 @@ class VoxCPMLocDiT(nn.Module):
                 enable_dit=False,
                 r=lora_config.r,
                 alpha=lora_config.alpha,
-                dropout=lora_config.dropout,
                 target_modules_lm=lora_config.target_modules_dit,  # Use DiT targets
                 target_modules_dit=[],
             )
@@ -836,14 +829,13 @@ class VoxCPMModel(nn.Module):
         # Determine LoRA config for projection layers
         proj_lora_r = lora_config.r if (lora_config and lora_config.enable_proj) else 0
         proj_lora_alpha = lora_config.alpha if lora_config else 16.0
-        proj_lora_dropout = lora_config.dropout if lora_config else 0.0
         proj_targets = lora_config.target_proj_modules if lora_config else []
         
         # enc_to_lm_proj
         if proj_lora_r > 0 and "enc_to_lm_proj" in proj_targets:
             self.enc_to_lm_proj = LoRALinear(
                 config.encoder_config.hidden_dim, config.lm_config.hidden_size,
-                lora_r=proj_lora_r, lora_alpha=proj_lora_alpha, lora_dropout=proj_lora_dropout
+                lora_r=proj_lora_r, lora_alpha=proj_lora_alpha
             )
         else:
             self.enc_to_lm_proj = nn.Linear(config.encoder_config.hidden_dim, config.lm_config.hidden_size)
@@ -852,7 +844,7 @@ class VoxCPMModel(nn.Module):
         if proj_lora_r > 0 and "lm_to_dit_proj" in proj_targets:
             self.lm_to_dit_proj = LoRALinear(
                 config.lm_config.hidden_size, config.dit_config.hidden_dim,
-                lora_r=proj_lora_r, lora_alpha=proj_lora_alpha, lora_dropout=proj_lora_dropout
+                lora_r=proj_lora_r, lora_alpha=proj_lora_alpha
             )
         else:
             self.lm_to_dit_proj = nn.Linear(config.lm_config.hidden_size, config.dit_config.hidden_dim)
@@ -861,7 +853,7 @@ class VoxCPMModel(nn.Module):
         if proj_lora_r > 0 and "res_to_dit_proj" in proj_targets:
             self.res_to_dit_proj = LoRALinear(
                 config.lm_config.hidden_size, config.dit_config.hidden_dim,
-                lora_r=proj_lora_r, lora_alpha=proj_lora_alpha, lora_dropout=proj_lora_dropout
+                lora_r=proj_lora_r, lora_alpha=proj_lora_alpha
             )
         else:
             self.res_to_dit_proj = nn.Linear(config.lm_config.hidden_size, config.dit_config.hidden_dim)
