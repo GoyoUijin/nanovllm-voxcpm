@@ -130,6 +130,62 @@ The HTTP server demo is documented separately to keep this README focused:
 
 - `fastapi/README.md`
 
+## Benchmark
+
+The `benchmark/` directory contains an end-to-end inference benchmark that drives
+the public server API and reports throughput/latency metrics.
+
+Quick run:
+
+```bash
+uv run python benchmark/bench_inference.py --model ~/VoxCPM1.5 --devices 0 --concurrency 1 --warmup 1 --iters 5
+```
+
+Use a longer English prompt (~100 words) for more stable results:
+
+```bash
+uv run python benchmark/bench_inference.py --model ~/VoxCPM1.5 --devices 0 --concurrency 1 --warmup 1 --iters 5 \
+  --target-text-file benchmark/target_text_100w_en.txt
+```
+
+See `benchmark/README.md` for more flags.
+
+### Reference Results (RTX 4090)
+
+All reference numbers in this section are measured on NVIDIA GeForce RTX 4090.
+
+The benchmark reports `RTF_per_req_mean`, defined as the mean over requests of
+`(request_wall_time / request_audio_duration)` under the given concurrency.
+
+Test setup:
+
+- GPU: NVIDIA GeForce RTX 4090
+- Model: `~/VoxCPM1.5`
+- Benchmark: `benchmark/bench_inference.py`
+- Runs: `--warmup 1 --iters 5`
+
+Short prompt (`"Hello world."`):
+
+Note: with a very short prompt, the model's stopping behavior can be noisy, so output audio duration (and thus RTF) may have high variance at higher concurrency.
+
+| concurrency | TTFB p50 (s) | TTFB p90 (s) | RTF_per_req_mean |
+|---:|---:|---:|---:|
+| 1 | 0.1741 ± 0.0012 | 0.1741 ± 0.0012 | 0.1918 ± 0.0127 |
+| 8 | 0.1804 ± 0.0041 | 0.1807 ± 0.0040 | 0.2353 ± 0.0162 |
+| 16 | 0.1870 ± 0.0055 | 0.1878 ± 0.0054 | 0.3009 ± 0.0094 |
+| 32 | 0.1924 ± 0.0052 | 0.1932 ± 0.0051 | 0.4055 ± 0.0099 |
+| 64 | 0.2531 ± 0.0823 | 0.2918 ± 0.0938 | 0.6755 ± 0.0668 |
+
+Long prompt (`benchmark/target_text_100w_en.txt`):
+
+| concurrency | TTFB p50 (s) | TTFB p90 (s) | RTF_per_req_mean |
+|---:|---:|---:|---:|
+| 1 | 0.1909 ± 0.0102 | 0.1909 ± 0.0102 | 0.0805 ± 0.0007 |
+| 8 | 0.1902 ± 0.0021 | 0.1905 ± 0.0021 | 0.1159 ± 0.0004 |
+| 16 | 0.2044 ± 0.0050 | 0.2050 ± 0.0051 | 0.1825 ± 0.0007 |
+| 32 | 0.2168 ± 0.0034 | 0.2185 ± 0.0032 | 0.3207 ± 0.0022 |
+| 64 | 0.3235 ± 0.0063 | 0.3250 ± 0.0064 | 0.5556 ± 0.0033 |
+
 ## Acknowledgments
 
 - [VoxCPM](https://github.com/OpenBMB/VoxCPM)

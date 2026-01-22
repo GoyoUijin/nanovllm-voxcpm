@@ -46,6 +46,23 @@ FastAPI demo:
 uv run fastapi run fastapi/app.py
 ```
 
+## Benchmark
+
+End-to-end inference benchmark:
+
+```bash
+uv run python benchmark/bench_inference.py --model ~/VoxCPM1.5 --devices 0 --concurrency 1 --warmup 1 --iters 5
+```
+
+Use a longer English prompt (~100 words):
+
+```bash
+uv run python benchmark/bench_inference.py --model ~/VoxCPM1.5 --devices 0 --concurrency 1 --warmup 1 --iters 5 \
+  --target-text-file benchmark/target_text_100w_en.txt
+```
+
+Tip: if you hit CUDA OOM, lower `--concurrency`, reduce `--max-generate-length`, or switch to a less-busy GPU.
+
 ## Build / Lint / Test
 
 ### Quick Sanity (syntax)

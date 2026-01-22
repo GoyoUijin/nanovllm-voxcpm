@@ -1,4 +1,9 @@
-from nanovllm_voxcpm.models.voxcpm.engine import VoxCPMEngine, VoxCPMRunner, VoxCPMConfig, Config
+from nanovllm_voxcpm.models.voxcpm.engine import (
+    VoxCPMEngine,
+    VoxCPMRunner,
+    VoxCPMConfig,
+    Config,
+)
 from nanovllm_voxcpm.models.voxcpm.config import LoRAConfig
 from nanovllm_voxcpm.utils.loader import load_lora_weights
 import os
@@ -8,6 +13,7 @@ import traceback
 import uuid
 import torchaudio
 import io
+import time
 import asyncio
 from typing import Any, AsyncGenerator, List, Optional, cast
 from typing_extensions import TypedDict, Literal
@@ -167,6 +173,16 @@ def main_loop(queue_in: mp.Queue, queue_out: mp.Queue, args, kwargs):
     import signal
 
     signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    # Small coalescing window for bursty arrivals.
+    # Parse once so env lookup doesn't sit on the hot path.
+    try:
+        coalesce_ms = float(os.environ.get("NANOVLLM_QUEUE_COALESCE_MS", "2"))
+    except ValueError:
+        coalesce_ms = 2.0
+    if coalesce_ms > 0:
+        coalesce_ms = min(coalesce_ms, 50.0)
+
     srv = VoxCPMServerImpl(*args, **kwargs)
 
     states = {
@@ -206,6 +222,18 @@ def main_loop(queue_in: mp.Queue, queue_out: mp.Queue, args, kwargs):
         # while llm server is empty
         cmd = queue_in.get()
         queue_out.put(method_call(cmd))
+
+        if coalesce_ms > 0:
+            deadline = time.perf_counter() + (coalesce_ms / 1000.0)
+            while not states["is_stoped"]:
+                remaining = deadline - time.perf_counter()
+                if remaining <= 0:
+                    break
+                try:
+                    cmd = queue_in.get(timeout=remaining)
+                except Empty:
+                    break
+                queue_out.put(method_call(cmd))
 
         while not srv.is_finished() and not states["is_stoped"]:
             # while llm server is not empty

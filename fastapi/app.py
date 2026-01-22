@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from nanovllm_voxcpm.models.voxcpm.config import LoRAConfig
 from nanovllm_voxcpm.models.voxcpm.server import AsyncVoxCPMServerPool
 
+
 class HealthResponse(BaseModel):
     """Health check response."""
 
@@ -76,15 +77,13 @@ class AddPromptRequest(BaseModel):
     wav_base64: str = Field(
         ...,
         description=(
-            "Base64-encoded audio file bytes (entire file contents). "
-            "Do not include a 'data:audio/...' prefix."
+            "Base64-encoded audio file bytes (entire file contents). " "Do not include a 'data:audio/...' prefix."
         ),
     )
     wav_format: str = Field(
         ...,
         description=(
-            "Audio container format for decoding (e.g. 'wav', 'flac', 'mp3'). "
-            "This is passed through to torchaudio."
+            "Audio container format for decoding (e.g. 'wav', 'flac', 'mp3'). " "This is passed through to torchaudio."
         ),
         examples=["wav"],
     )
@@ -137,6 +136,7 @@ LORA_PATH: str | None = None
 # If LoRA is not needed, set to None:
 LORA_CONFIG: LoRAConfig | None = None
 # ================================================
+
 
 def _get_server(request: Request) -> AsyncVoxCPMServerPool:
     """FastAPI dependency that returns the initialized server pool."""
@@ -211,6 +211,7 @@ async def health() -> HealthResponse:
 
 # ==================== LoRA Management API ====================
 
+
 @app.post("/lora/load", response_model=LoadLoRAResponse, tags=["lora"])
 async def load_lora(
     request: LoadLoRARequest,
@@ -244,6 +245,7 @@ async def reset_lora(server: AsyncVoxCPMServerPool = Depends(_get_server)) -> St
 
 
 # ==================== Original API ====================
+
 
 @app.post("/add_prompt", response_model=AddPromptResponse, tags=["prompts"])
 async def add_prompt(
