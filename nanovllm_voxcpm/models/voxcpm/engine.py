@@ -34,6 +34,9 @@ class VoxCPMEngine(LLMEngineBase):
         self.patch_size = config.model_config.patch_size
         self.audio_start_token = 101
         self.block_size = config.kvcache_block_size
+        # Enforce a hard upper bound on per-request sequence length.
+        # This must be consistent with CUDA graph capture shapes.
+        self.max_model_len = config.max_model_len
 
         self.tokenizer = mask_multichar_chinese_tokens(LlamaTokenizerFast.from_pretrained(config.model))
 
@@ -120,6 +123,9 @@ class VoxCPMEngine(LLMEngineBase):
         temperature: float = 1.0,
         cfg_value: float = 1.0,
     ):
+        if max_generate_length < 1:
+            raise ValueError(f"max_generate_length must be >= 1, got {max_generate_length}")
+
         text_tokens = self.tokenizer(prompt_text + target_text) + [self.audio_start_token]
         audio_feat = np.zeros((len(text_tokens), self.patch_size, self.feat_dim), dtype=np.float32)
         feat_masks = [False for _ in range(len(text_tokens))]
@@ -140,6 +146,25 @@ class VoxCPMEngine(LLMEngineBase):
 
             for i in range(wav_latents.shape[0]):
                 hash_tokens.append(wav_latents[i].tobytes())
+
+        # Sequence length accounting:
+        # - Initial prompt length is len(hash_tokens).
+        # - Each decode step appends exactly one token into Sequence.token_ids.
+        # CUDA graph capture sizes (e.g. block_tables width) are derived from max_model_len,
+        # so reject requests that can exceed it.
+        prompt_len = len(hash_tokens)
+        total_len_upper_bound = prompt_len + max_generate_length
+        if prompt_len > self.max_model_len:
+            raise ValueError(
+                f"Prompt is too long for max_model_len: prompt_len={prompt_len} > max_model_len={self.max_model_len}"
+            )
+        if total_len_upper_bound > self.max_model_len:
+            raise ValueError(
+                "Request may exceed max_model_len: "
+                f"prompt_len({prompt_len}) + max_generate_length({max_generate_length}) = {total_len_upper_bound} "
+                f"> max_model_len({self.max_model_len}). "
+                "Reduce input length or max_generate_length, or increase max_model_len."
+            )
 
         seq = Sequence(
             seq_id,

@@ -25,7 +25,12 @@ def _ensure_module(name: str) -> types.ModuleType:
 
 def _module_available(name: str) -> bool:
     # Avoid stubbing real packages that are installed but not yet imported.
-    return importlib.util.find_spec(name) is not None
+    try:
+        return importlib.util.find_spec(name) is not None
+    except (ModuleNotFoundError, AttributeError, ValueError):
+        # Some environments may provide partial stubs (e.g. a non-package module
+        # named "triton") where importlib's module resolution can error.
+        return False
 
 
 def pytest_configure():
