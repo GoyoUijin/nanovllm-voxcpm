@@ -78,12 +78,20 @@ uv run python -m build
 ```
 
 ### Lint / Format (optional tooling)
-Black config exists in `pyproject.toml` (line length 120). Ruff is not configured
-in-repo but can be used ad-hoc.
+Black is configured in `pyproject.toml` (line length 120).
+
+Ruff has no in-repo configuration; running it is optional and uses Ruff defaults.
 
 ```bash
 uv pip install -U black ruff
+
+# CI-style formatting check (no edits)
+uv run black --check .
+
+# Apply formatting
 uv run black .
+
+# Optional lint (ad-hoc defaults)
 uv run ruff check .
 ```
 
