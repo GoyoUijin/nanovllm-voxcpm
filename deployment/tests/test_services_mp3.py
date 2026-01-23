@@ -4,13 +4,11 @@ from pathlib import Path
 
 import pytest
 
-
 fastapi = pytest.importorskip("fastapi")
 pytest.importorskip("starlette")
 pytest.importorskip("lameenc")
 
 import numpy as np
-
 
 DEPLOYMENT_DIR = Path(__file__).resolve().parents[1]
 if str(DEPLOYMENT_DIR) not in sys.path:

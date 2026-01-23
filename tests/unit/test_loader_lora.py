@@ -3,7 +3,6 @@ import types
 
 import pytest
 
-
 torch = pytest.importorskip("torch")
 
 

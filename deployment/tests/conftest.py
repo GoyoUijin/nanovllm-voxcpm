@@ -3,7 +3,6 @@ from pathlib import Path
 
 import pytest
 
-
 # Ensure `import app...` resolves to deployment/app.
 DEPLOYMENT_DIR = Path(__file__).resolve().parents[1]
 if str(DEPLOYMENT_DIR) not in sys.path:

@@ -1,6 +1,5 @@
 import pytest
 
-
 xxhash = pytest.importorskip("xxhash")
 
 

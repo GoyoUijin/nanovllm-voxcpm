@@ -1,6 +1,5 @@
 import pytest
 
-
 pytest.importorskip("fastapi")
 pytest.importorskip("starlette")
 pytest.importorskip("prometheus_client")

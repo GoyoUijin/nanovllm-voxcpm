@@ -2,7 +2,6 @@ import math
 
 import pytest
 
-
 torch = pytest.importorskip("torch")
 
 

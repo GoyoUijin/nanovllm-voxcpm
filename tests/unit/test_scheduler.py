@@ -1,6 +1,5 @@
 import pytest
 
-
 pydantic = pytest.importorskip("pydantic")
 xxhash = pytest.importorskip("xxhash")
 

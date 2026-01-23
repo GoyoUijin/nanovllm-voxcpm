@@ -19,7 +19,6 @@ from app.schemas.http import ErrorResponse, GenerateRequest
 from app.services.mp3 import stream_mp3
 from nanovllm_voxcpm.models.voxcpm.server import AsyncVoxCPMServerPool
 
-
 router = APIRouter(tags=["generation"])
 
 
@@ -40,22 +39,16 @@ def _validate_generate_prompt(req: GenerateRequest) -> None:
                 detail="wav prompt requires prompt_wav_base64 + prompt_wav_format",
             )
         if req.prompt_text is None or req.prompt_text == "":
-            raise HTTPException(
-                status_code=400, detail="wav prompt requires non-empty prompt_text"
-            )
+            raise HTTPException(status_code=400, detail="wav prompt requires non-empty prompt_text")
         return
 
     if has_latents:
         if req.prompt_text is None or req.prompt_text == "":
-            raise HTTPException(
-                status_code=400, detail="latents prompt requires non-empty prompt_text"
-            )
+            raise HTTPException(status_code=400, detail="latents prompt requires non-empty prompt_text")
         return
 
     if req.prompt_text not in (None, ""):
-        raise HTTPException(
-            status_code=400, detail="prompt_text is not allowed for zero-shot"
-        )
+        raise HTTPException(status_code=400, detail="prompt_text is not allowed for zero-shot")
 
 
 @router.post(
@@ -84,11 +77,7 @@ def _validate_generate_prompt(req: GenerateRequest) -> None:
         400: {"description": "Invalid input", "model": ErrorResponse},
         422: {
             "description": "Validation error",
-            "content": {
-                "application/json": {
-                    "schema": {"$ref": "#/components/schemas/HTTPValidationError"}
-                }
-            },
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/HTTPValidationError"}}},
         },
         503: {"description": "Model server not ready", "model": ErrorResponse},
         500: {"description": "Internal error", "model": ErrorResponse},
@@ -109,17 +98,13 @@ async def generate(
 
     cfg = getattr(request.app.state, "cfg", None)
     if cfg is None:
-        raise HTTPException(
-            status_code=500, detail="server misconfigured: missing app.state.cfg"
-        )
+        raise HTTPException(status_code=500, detail="server misconfigured: missing app.state.cfg")
 
     model_info = await server.get_model_info()
     sample_rate = int(model_info["sample_rate"])
     channels = int(model_info["channels"])
     if channels != 1:
-        raise HTTPException(
-            status_code=500, detail=f"Only mono is supported (channels={channels})"
-        )
+        raise HTTPException(status_code=500, detail=f"Only mono is supported (channels={channels})")
 
     prompt_latents: bytes | None = None
     prompt_text = ""
@@ -127,9 +112,7 @@ async def generate(
         try:
             wav = base64.b64decode(req.prompt_wav_base64)
         except Exception as e:
-            raise HTTPException(
-                status_code=400, detail=f"Invalid base64 in prompt_wav_base64: {e}"
-            ) from e
+            raise HTTPException(status_code=400, detail=f"Invalid base64 in prompt_wav_base64: {e}") from e
         assert req.prompt_wav_format is not None
         assert req.prompt_text is not None
         prompt_latents = await server.encode_latents(wav, req.prompt_wav_format)
@@ -138,9 +121,7 @@ async def generate(
         try:
             prompt_latents = base64.b64decode(req.prompt_latents_base64)
         except Exception as e:
-            raise HTTPException(
-                status_code=400, detail=f"Invalid base64 in prompt_latents_base64: {e}"
-            ) from e
+            raise HTTPException(status_code=400, detail=f"Invalid base64 in prompt_latents_base64: {e}") from e
         assert req.prompt_text is not None
         prompt_text = req.prompt_text
 

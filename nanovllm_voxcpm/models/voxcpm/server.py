@@ -15,6 +15,7 @@ import torchaudio
 import io
 import time
 import asyncio
+import contextlib
 from typing import Any, AsyncGenerator, List, Optional, cast
 from typing_extensions import TypedDict, Literal
 import numpy as np
@@ -364,37 +365,41 @@ class AsyncVoxCPMServer:
         self.stream_table: dict[str, asyncio.Queue[Waveform | None]] = {}
 
     async def recv_queue(self) -> None:
-        while True:
-            try:
-                res = await asyncio.to_thread(self.queue_out.get, timeout=1)
-            except Empty:
-                continue
+        try:
+            while True:
+                try:
+                    res = await asyncio.to_thread(self.queue_out.get, timeout=1)
+                except Empty:
+                    continue
 
-            # Init handshake (sent once at process startup).
-            if res.get("type") == "init_ok":
-                if not self._init_fut.done():
-                    self._init_fut.set_result(None)
-                continue
-            if res.get("type") == "init_error":
-                if not self._init_fut.done():
-                    self._init_fut.set_exception(RuntimeError(res.get("error", "unknown init error")))
-                continue
+                # Init handshake (sent once at process startup).
+                if res.get("type") == "init_ok":
+                    if not self._init_fut.done():
+                        self._init_fut.set_result(None)
+                    continue
+                if res.get("type") == "init_error":
+                    if not self._init_fut.done():
+                        self._init_fut.set_exception(RuntimeError(res.get("error", "unknown init error")))
+                    continue
 
-            if res["type"] == "stream":
-                if res["id"] in self.stream_table:
-                    stream_data = res["data"]
-                    await self.stream_table[res["id"]].put(stream_data)
+                if res["type"] == "stream":
+                    if res["id"] in self.stream_table:
+                        stream_data = res["data"]
+                        await self.stream_table[res["id"]].put(stream_data)
+                    else:
+                        print(f"Unknown stream_id: {res['id']}")
+                elif res["id"] in self.op_table:
+                    if res["type"] == "response":
+                        self.op_table[res["id"]].set_result(res["data"] if "data" in res else None)
+                        del self.op_table[res["id"]]
+                    else:
+                        self.op_table[res["id"]].set_exception(RuntimeError(res["error"]))
+                        del self.op_table[res["id"]]
                 else:
-                    print(f"Unknown stream_id: {res['id']}")
-            elif res["id"] in self.op_table:
-                if res["type"] == "response":
-                    self.op_table[res["id"]].set_result(res["data"] if "data" in res else None)
-                    del self.op_table[res["id"]]
-                else:
-                    self.op_table[res["id"]].set_exception(RuntimeError(res["error"]))
-                    del self.op_table[res["id"]]
-            else:
-                print(f"Unknown op_id: {res['id']}")
+                    print(f"Unknown op_id: {res['id']}")
+        except asyncio.CancelledError:
+            # Normal shutdown path: stop() cancels this task.
+            return
 
     async def submit(self, cmd: str, *args: object, **kwargs: object) -> Any:
         op_id = str(uuid.uuid4())
@@ -439,14 +444,26 @@ class AsyncVoxCPMServer:
     async def stop(self) -> None:
         # Best-effort graceful shutdown. If init failed or the child process
         # already exited, don't block indefinitely.
+        graceful_stop = False
         if self.process.exitcode is None and self.process.is_alive():
             try:
                 await asyncio.wait_for(self.submit("stop"), timeout=2.0)
+                graceful_stop = True
             except Exception:
                 # Fall back to terminate/kill below.
                 pass
 
         self.recv_task.cancel()
+        # Ensure the background receiver task is actually done before closing queues.
+        # Cancellation may race with the underlying to_thread() call.
+        # In Python 3.10+, asyncio.CancelledError may not be an Exception.
+        with contextlib.suppress(asyncio.CancelledError):
+            await self.recv_task
+
+        # If the child acknowledged stop, give it a chance to exit cleanly
+        # before we escalate to terminate/kill.
+        if graceful_stop and self.process.is_alive():
+            await asyncio.to_thread(self.process.join, 5.0)
 
         if self.process.is_alive():
             self.process.terminate()
@@ -458,6 +475,17 @@ class AsyncVoxCPMServer:
             if callable(kill):
                 kill()
                 await asyncio.to_thread(self.process.join, 2.0)
+
+        # The parent process created these multiprocessing Queues. If we don't
+        # close/join them, Python may warn at interpreter shutdown about leaked
+        # semaphore objects via multiprocessing.resource_tracker.
+        for q in (getattr(self, "queue_in", None), getattr(self, "queue_out", None)):
+            if q is None:
+                continue
+            with contextlib.suppress(Exception):
+                q.close()
+            with contextlib.suppress(Exception):
+                q.join_thread()
 
     async def generate(
         self,

@@ -12,7 +12,6 @@ from prometheus_client import (
     generate_latest,
 )
 
-
 HTTP_REQUESTS_TOTAL = Counter(
     "nanovllm_http_requests_total",
     "Total HTTP requests",

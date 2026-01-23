@@ -13,7 +13,6 @@ from app.core.metrics import (
 from app.schemas.http import EncodeLatentsRequest, EncodeLatentsResponse, ErrorResponse
 from nanovllm_voxcpm.models.voxcpm.server import AsyncVoxCPMServerPool
 
-
 router = APIRouter(tags=["latents"])
 
 
@@ -25,11 +24,7 @@ router = APIRouter(tags=["latents"])
         400: {"description": "Invalid input", "model": ErrorResponse},
         422: {
             "description": "Validation error",
-            "content": {
-                "application/json": {
-                    "schema": {"$ref": "#/components/schemas/HTTPValidationError"}
-                }
-            },
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/HTTPValidationError"}}},
         },
         503: {"description": "Model server not ready", "model": ErrorResponse},
         500: {"description": "Internal error", "model": ErrorResponse},
@@ -46,9 +41,7 @@ async def encode_latents(
         wav = base64.b64decode(req.wav_base64)
     except Exception as e:
         ENCODE_LATENTS_REQUESTS_TOTAL.labels(status="400").inc()
-        raise HTTPException(
-            status_code=400, detail=f"Invalid base64 in wav_base64: {e}"
-        ) from e
+        raise HTTPException(status_code=400, detail=f"Invalid base64 in wav_base64: {e}") from e
 
     try:
         latents = await server.encode_latents(wav, req.wav_format)

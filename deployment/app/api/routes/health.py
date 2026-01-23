@@ -4,7 +4,6 @@ from fastapi import APIRouter, HTTPException, Request
 
 from app.schemas.http import ErrorResponse, HealthResponse
 
-
 router = APIRouter(tags=["health"])
 
 
