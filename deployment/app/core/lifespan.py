@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+import time
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
+
+from fastapi import FastAPI
+
+from nanovllm_voxcpm.models.voxcpm.config import LoRAConfig as VoxLoRAConfig
+from nanovllm_voxcpm.models.voxcpm.server import AsyncVoxCPMServerPool
+
+from app.core.config import ServiceConfig
+from app.core.metrics import LORA_LOADED, LORA_LOAD_SECONDS
+from app.services.lora_resolver import (
+    load_lora_config_from_checkpoint,
+    normalize_lora_checkpoint_path,
+    resolve_lora_uri,
+)
+
+
+def build_lifespan(cfg: ServiceConfig):
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        lora_config: VoxLoRAConfig | None = None
+        lora_ckpt_path: str | None = None
+
+        if cfg.lora.uri:
+            # Resolve before starting the model so we can honor LoRAConfig saved in lora_config.json.
+            resolved = resolve_lora_uri(
+                uri=cfg.lora.uri,
+                cache_dir=cfg.lora.cache_dir,
+                expected_sha256=cfg.lora.sha256,
+            )
+            ckpt_dir = normalize_lora_checkpoint_path(resolved.local_path)
+            lora_ckpt_path = str(ckpt_dir)
+            parsed_cfg = load_lora_config_from_checkpoint(ckpt_dir)
+            lora_config = parsed_cfg or VoxLoRAConfig()
+
+        server = AsyncVoxCPMServerPool(
+            model_path=cfg.model_path,
+            max_num_batched_tokens=8192,
+            max_num_seqs=16,
+            max_model_len=4096,
+            gpu_memory_utilization=0.95,
+            enforce_eager=False,
+            devices=[0],
+            lora_config=lora_config,
+        )
+        app.state.server = server
+        app.state.ready = False
+        app.state.lora = {
+            "lora_uri": cfg.lora.uri,
+            "lora_id": cfg.lora.lora_id,
+            "cache_dir": cfg.lora.cache_dir,
+            "loaded": False,
+        }
+
+        try:
+            await server.wait_for_ready()
+
+            if cfg.lora.uri:
+                t0 = time.perf_counter()
+                assert lora_ckpt_path is not None
+                await server.load_lora(lora_ckpt_path)
+                await server.set_lora_enabled(True)
+                LORA_LOADED.labels(lora_id=str(cfg.lora.lora_id)).set(1)
+                LORA_LOAD_SECONDS.observe(time.perf_counter() - t0)
+                app.state.lora.update({"loaded": True})
+
+            app.state.ready = True
+            yield
+        finally:
+            app.state.ready = False
+            await server.stop()
+            if getattr(app.state, "server", None) is server:
+                delattr(app.state, "server")
+
+    return lifespan

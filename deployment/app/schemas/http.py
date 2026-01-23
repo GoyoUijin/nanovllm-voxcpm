@@ -1,0 +1,140 @@
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class HealthResponse(BaseModel):
+    """Standard health response for liveness/readiness endpoints."""
+
+    status: Literal["ok"] = "ok"
+
+
+class ErrorResponse(BaseModel):
+    """Default error response shape produced by FastAPI for HTTPException.
+
+    Note: FastAPI's validation errors (422) use a different schema.
+    """
+
+    detail: str = Field(..., description="Human-readable error message.")
+
+
+class ModelInfo(BaseModel):
+    """Read-only model metadata returned by the engine."""
+
+    sample_rate: int = Field(
+        ..., description="Audio sample rate in Hz.", examples=[16000]
+    )
+    channels: int = Field(..., description="Number of audio channels.", examples=[1])
+    feat_dim: int = Field(..., description="Latent feature dimension.", examples=[64])
+    patch_size: int = Field(..., description="Model patch size.", examples=[2])
+    model_path: str = Field(
+        ...,
+        description="Resolved model path used by this instance.",
+        examples=["/models/VoxCPM1.5"],
+    )
+
+
+class Mp3Info(BaseModel):
+    """MP3 encoder configuration used by /generate."""
+
+    bitrate_kbps: int | None = Field(
+        None, description="Constant bitrate used for MP3 encoding.", examples=[192]
+    )
+    quality: int | None = Field(
+        None, description="LAME quality preset (0 is best, 2 is fast).", examples=[2]
+    )
+
+
+class LoRAInfo(BaseModel):
+    """LoRA startup configuration and load status."""
+
+    lora_uri: str | None = Field(
+        None,
+        description="LoRA artifact URI (if configured).",
+        examples=["hf://org/repo@main?path=step_0002000"],
+    )
+    lora_id: str | None = Field(
+        None,
+        description="Logical LoRA ID associated with this instance.",
+        examples=["my-lora"],
+    )
+    cache_dir: str | None = Field(
+        None, description="Cache directory used to resolve LoRA artifacts."
+    )
+    loaded: bool = Field(
+        ...,
+        description="Whether LoRA weights have been loaded and enabled.",
+        examples=[False],
+    )
+
+
+class InfoResponse(BaseModel):
+    """Response for GET /info."""
+
+    model: ModelInfo
+    lora: LoRAInfo
+    mp3: Mp3Info
+
+
+class EncodeLatentsRequest(BaseModel):
+    """Request body for POST /encode_latents."""
+
+    wav_base64: str = Field(
+        ...,
+        description="Base64-encoded audio file bytes (entire file contents). Do not include a data URI prefix.",
+        examples=["UklGRiQAAABXQVZFZm10IBAAAAABAAEA..."],
+    )
+    wav_format: str = Field(
+        ...,
+        description="Audio container format for decoding (e.g. 'wav', 'flac', 'mp3'); passed to torchaudio.",
+        examples=["wav"],
+    )
+
+
+class EncodeLatentsResponse(BaseModel):
+    """Response body for POST /encode_latents."""
+
+    prompt_latents_base64: str
+    feat_dim: int
+    latents_dtype: Literal["float32"] = "float32"
+    sample_rate: int
+    channels: int
+
+
+class GenerateRequest(BaseModel):
+    """Request body for POST /generate.
+
+    Prompt forms (mutually exclusive):
+
+    - Zero-shot: omit all prompt_* fields.
+    - WAV prompt: set prompt_wav_base64 + prompt_wav_format + prompt_text.
+    - Latents prompt: set prompt_latents_base64 + prompt_text.
+    """
+
+    target_text: str = Field(..., description="Text to synthesize.")
+
+    # Prompt forms (mutually exclusive):
+    prompt_wav_base64: str | None = Field(
+        None,
+        description="(wav prompt) Base64-encoded audio file bytes (entire file contents).",
+    )
+    prompt_wav_format: str | None = Field(
+        None,
+        description="(wav prompt) Audio container format for decoding (e.g. 'wav', 'flac', 'mp3').",
+    )
+    prompt_latents_base64: str | None = Field(
+        None,
+        description="(latents prompt) Base64-encoded float32 bytes returned by /encode_latents.",
+    )
+    prompt_text: str | None = Field(
+        None,
+        description="Prompt transcript text. Required for wav/latents prompt; omitted for zero-shot.",
+    )
+
+    max_generate_length: int = Field(
+        2000, ge=1, description="Maximum number of model generation steps."
+    )
+    temperature: float = Field(1.0, ge=0.0, description="Sampling temperature.")
+    cfg_value: float = Field(1.5, ge=0.0, description="Classifier-free guidance scale.")

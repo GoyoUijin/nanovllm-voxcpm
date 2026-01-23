@@ -195,6 +195,8 @@ cython_debug/
 .cursorindexingignore
 
 *.wav
+*.mp3
+!deployment/prompt_audio.wav
 *.pt
 *.safetensors
 

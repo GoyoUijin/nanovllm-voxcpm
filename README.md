@@ -5,7 +5,7 @@ An inference engine for VoxCPM based on Nano-vLLM.
 Features:
 - Faster than the pytorch implementation
 - Support concurrent requests
-- Friendly async API (can be wrapped by an HTTP server; see `fastapi/README.md`)
+- Friendly async API (can be wrapped by an HTTP server; see `deployment/README.md`)
 
 This repository contains a Python package (`nanovllm_voxcpm/`) plus an optional FastAPI demo.
 
@@ -128,7 +128,13 @@ See the docstrings in `nanovllm_voxcpm/models/voxcpm/server.py` for details.
 
 The HTTP server demo is documented separately to keep this README focused:
 
-- `fastapi/README.md`
+- `deployment/README.md`
+
+If you want the deployment server dependencies too, use:
+
+```bash
+uv sync --all-packages --frozen
+```
 
 ## Benchmark
 

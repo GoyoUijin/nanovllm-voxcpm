@@ -42,6 +42,14 @@ class ResetLoraResponse(TypedDict):
     status: Literal["ok"]
 
 
+class ModelInfoResponse(TypedDict):
+    sample_rate: int
+    channels: int
+    feat_dim: int
+    patch_size: int
+    model_path: str
+
+
 def gen_uuid() -> str:
     return uuid.uuid4().hex
 
@@ -85,6 +93,16 @@ class VoxCPMServerImpl:
 
     def health(self) -> HealthResponse:
         return HealthResponse(status="ok")
+
+    def get_model_info(self) -> ModelInfoResponse:
+        # Read-only metadata for HTTP services; avoids parsing config.json in wrappers.
+        return ModelInfoResponse(
+            sample_rate=int(self.sample_rate),
+            channels=1,
+            feat_dim=int(self.llm.feat_dim),
+            patch_size=int(self.llm.patch_size),
+            model_path=str(self.model_path),
+        )
 
     def encode_latents(self, wav: bytes, wav_format: str) -> bytes:
         wav_tensor, sr = torchaudio.load(io.BytesIO(wav), format=wav_format)
@@ -400,6 +418,9 @@ class AsyncVoxCPMServer:
     async def health(self) -> HealthResponse:
         return await self.submit("health")
 
+    async def get_model_info(self) -> ModelInfoResponse:
+        return await self.submit("get_model_info")
+
     async def wait_for_ready(self) -> None:
         # Never time out here; instead fail fast if the child process exits.
         while not self._init_fut.done():
@@ -531,6 +552,12 @@ class AsyncVoxCPMServerPool:
         # send to one
         min_load_server_idx = np.argmin(self.servers_load)
         return await self.servers[min_load_server_idx].encode_latents(wav, wav_format)
+
+    async def get_model_info(self) -> ModelInfoResponse:
+        # Assume homogeneous servers inside a pool.
+        if len(self.servers) == 0:
+            raise RuntimeError("server pool is empty")
+        return await self.servers[0].get_model_info()
 
     async def add_prompt(self, wav: bytes, wav_format: str, prompt_text: str):
         prompt_id = gen_uuid()
@@ -669,6 +696,10 @@ class SyncVoxCPMServerPool:
     def encode_latents(self, wav: bytes, wav_format: str):
         assert self.loop is not None
         return self.loop.run_until_complete(self.server_pool.encode_latents(wav, wav_format))
+
+    def get_model_info(self) -> ModelInfoResponse:
+        assert self.loop is not None
+        return self.loop.run_until_complete(self.server_pool.get_model_info())
 
     def add_prompt(self, wav: bytes, wav_format: str, prompt_text: str):
         assert self.loop is not None

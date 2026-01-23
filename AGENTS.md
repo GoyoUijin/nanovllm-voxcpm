@@ -1,6 +1,6 @@
 # AGENTS.md (nano-vllm-voxcpm)
 
-This repository is a Python package (`nano-vllm-voxcpm`) plus a small FastAPI demo.
+This repository is a Python package (`nano-vllm-voxcpm`) plus a deployment server.
 It is GPU-centric (PyTorch + Triton + flash-attn); many runtime paths assume CUDA.
 
 - Python: >=3.10,<3.13 (see `pyproject.toml`)
@@ -11,7 +11,7 @@ It is GPU-centric (PyTorch + Triton + flash-attn); many runtime paths assume CUD
 - `nanovllm_voxcpm/`: core library
 - `nanovllm_voxcpm/engine/`: scheduler, KV cache, runner lifecycle
 - `nanovllm_voxcpm/models/voxcpm/`: VoxCPM model integration (engine/server/runner/model)
-- `fastapi/`: demo server (`fastapi/app.py`)
+- `deployment/`: deployment server (`deployment/app/main.py`)
 - `tests/`: pytest tests (mostly `tests/unit/`)
 
 ## Docs Worth Reading First
@@ -25,14 +25,23 @@ Use the lockfile (recommended):
 uv sync --frozen
 ```
 
-FastAPI demo deps:
+Deployment server deps:
+
+`deployment/` is a uv workspace member; install from repo root:
+
 ```bash
-uv pip install -r fastapi/requirements.txt
+uv sync --all-packages --frozen
+```
+
+Or, only the deployment service:
+
+```bash
+uv sync --package nano-vllm-voxcpm-deployment --frozen
 ```
 
 Notes:
 - Run commands inside the managed env: `uv run <cmd...>`
-- Prefer `uv sync --frozen` to keep `uv.lock` stable
+- Prefer `uv sync --frozen`/`uv sync --all-packages --frozen` to keep `uv.lock` stable
 
 ## Run
 
@@ -41,9 +50,9 @@ Core example:
 uv run python example.py
 ```
 
-FastAPI demo:
+Deployment server:
 ```bash
-uv run fastapi run fastapi/app.py
+uv run fastapi run deployment/app/main.py
 ```
 
 ## Benchmark
@@ -67,7 +76,7 @@ Tip: if you hit CUDA OOM, lower `--concurrency`, reduce `--max-generate-length`,
 
 ### Quick Sanity (syntax)
 ```bash
-uv run python -m compileall nanovllm_voxcpm fastapi tests
+uv run python -m compileall nanovllm_voxcpm deployment tests
 ```
 
 ### Build (sdist/wheel)
