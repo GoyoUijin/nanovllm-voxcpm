@@ -10,6 +10,7 @@ These shims are ONLY used when the real packages aren't installed.
 from __future__ import annotations
 
 import importlib.util
+import importlib
 import os
 import sys
 import types
@@ -24,12 +25,32 @@ def _ensure_module(name: str) -> types.ModuleType:
 
 
 def _module_available(name: str) -> bool:
-    # Avoid stubbing real packages that are installed but not yet imported.
+    """Return True only if the module can be imported.
+
+    `find_spec()` being non-None just means the import machinery can *locate* the
+    module; GPU-centric packages can still fail at import time (missing CUDA,
+    incompatible wheels, etc.). For unit tests we treat those as unavailable and
+    install a shim instead.
+    """
+
+    # Fast negative path and avoids importing heavy modules when absent.
     try:
-        return importlib.util.find_spec(name) is not None
+        if importlib.util.find_spec(name) is None:
+            return False
     except (ModuleNotFoundError, AttributeError, ValueError):
         # Some environments may provide partial stubs (e.g. a non-package module
         # named "triton") where importlib's module resolution can error.
+        return False
+
+    try:
+        importlib.import_module(name)
+        return True
+    except Exception:
+        # Failed imports can leave partial entries in sys.modules; purge the
+        # module so our shim can be installed cleanly.
+        for mod_name in list(sys.modules.keys()):
+            if mod_name == name or mod_name.startswith(name + "."):
+                sys.modules.pop(mod_name, None)
         return False
 
 

@@ -59,6 +59,7 @@ flash-attn = [
     "wheel",
     "psutil",
     "packaging",
+    "ninja",
 ]
 
 [tool.uv.workspace]
