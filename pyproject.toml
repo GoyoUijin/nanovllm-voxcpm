@@ -53,7 +53,13 @@ extend-exclude = '''
 '''
 
 [tool.uv.extra-build-dependencies]
-flash-attn = [{ requirement = "torch", match-runtime = true }]
+flash-attn = [
+    { requirement = "torch", match-runtime = true },
+    { requirement = "setuptools" },
+    { requirement = "wheel" },
+    { requirement = "psutil" },
+    { requirement = "packaging" },
+]
 
 [tool.uv.workspace]
 members = ["deployment"]
