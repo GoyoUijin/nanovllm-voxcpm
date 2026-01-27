@@ -192,6 +192,42 @@ Long prompt (`benchmark/target_text_100w_en.txt`):
 | 32 | 0.2168 ± 0.0034 | 0.2185 ± 0.0032 | 0.3207 ± 0.0022 |
 | 64 | 0.3235 ± 0.0063 | 0.3250 ± 0.0064 | 0.5556 ± 0.0033 |
 
+Closed-loop users benchmark (`benchmark/bench_closed_loop_users.py`):
+
+- Model: `~/VoxCPM1.5`
+- Command:
+
+```bash
+uv run python benchmark/bench_closed_loop_users.py \
+  --model ~/VoxCPM1.5 \
+  --num-users 60 --warmup-s 5 --duration-s 60 \
+  --target-text-file benchmark/target_text_100w_en.txt \
+  --max-generate-length 2000
+```
+
+Results (measured window):
+
+| item | value |
+|---|---:|
+| sample_rate (Hz) | 44100 |
+| users | 60 |
+| started | 119 |
+| achieved rps | 1.98 |
+| ok | 119 |
+| err | 0 |
+
+TTFB (seconds, ok requests):
+
+| p50 | p90 | p95 | p99 | mean | stdev |
+|---:|---:|---:|---:|---:|---:|
+| 0.2634 | 0.3477 | 0.3531 | 0.3631 | 0.2884 | 0.0451 |
+
+RTF (wall/audio, ok requests):
+
+| p50 | p90 | p95 | p99 | mean | stdev |
+|---:|---:|---:|---:|---:|---:|
+| 0.7285 | 0.7946 | 0.8028 | 0.8255 | 0.6929 | 0.1062 |
+
 ## Acknowledgments
 
 - [VoxCPM](https://github.com/OpenBMB/VoxCPM)
