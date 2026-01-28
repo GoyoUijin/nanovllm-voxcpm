@@ -1,7 +1,6 @@
 import os
 from glob import glob
 from pathlib import Path
-from typing import Tuple, List
 import torch
 from torch import nn
 from safetensors import safe_open
@@ -57,7 +56,10 @@ def load_model(model: nn.Module, path: str):
 # ============================================================================
 
 # Mapping from VoxCPM's separate projections to nanovllm's fused projections
-LORA_NAME_MAPPING = {
+ShardId = str | int
+
+
+LORA_NAME_MAPPING: dict[str, tuple[str, ShardId | None]] = {
     # QKV projections: q_proj/k_proj/v_proj -> qkv_proj
     "q_proj.lora_A": ("qkv_proj.lora_A", "q"),
     "q_proj.lora_B": ("qkv_proj.lora_B_q", None),
@@ -78,7 +80,7 @@ LORA_NAME_MAPPING = {
 }
 
 
-def _map_lora_weight_name(orig_name: str) -> Tuple[str, str]:
+def _map_lora_weight_name(orig_name: str) -> tuple[str, ShardId | None]:
     """
     Map VoxCPM LoRA weight name to nanovllm format.
 
@@ -106,7 +108,7 @@ def load_lora_weights(
     model: nn.Module,
     lora_path: str,
     device: str = "cpu",
-) -> Tuple[List[str], List[str]]:
+) -> tuple[list[str], list[str]]:
     """
     Load LoRA weights from VoxCPM checkpoint into nanovllm model.
 
@@ -121,15 +123,17 @@ def load_lora_weights(
     Returns:
         Tuple of (loaded_keys, skipped_keys)
     """
-    lora_path = Path(os.path.expanduser(lora_path))
+    lora_path_p = Path(os.path.expanduser(lora_path))
 
     # Find the weights file
-    if lora_path.is_dir():
-        safetensors_file = lora_path / "lora_weights.safetensors"
-        ckpt_file = lora_path / "lora_weights.ckpt"
+    safetensors_file: Path | None
+    ckpt_file: Path | None
+    if lora_path_p.is_dir():
+        safetensors_file = lora_path_p / "lora_weights.safetensors"
+        ckpt_file = lora_path_p / "lora_weights.ckpt"
     else:
-        safetensors_file = lora_path if lora_path.suffix == ".safetensors" else None
-        ckpt_file = lora_path if lora_path.suffix in [".ckpt", ".pth"] else None
+        safetensors_file = lora_path_p if lora_path_p.suffix == ".safetensors" else None
+        ckpt_file = lora_path_p if lora_path_p.suffix in [".ckpt", ".pth"] else None
 
     # Load state dict
     if safetensors_file and safetensors_file.exists() and SAFETENSORS_AVAILABLE:
@@ -144,7 +148,7 @@ def load_lora_weights(
     model_params = dict(model.named_parameters())
 
     # Track which lora_A have been loaded (for fused loading)
-    lora_A_loaded = {}  # key: param_name, value: {shard_id: tensor}
+    lora_A_loaded: dict[str, dict[ShardId, torch.Tensor]] = {}  # key: param_name, value: {shard_id: tensor}
 
     loaded_keys = []
     skipped_keys = []
@@ -195,8 +199,9 @@ def load_lora_weights(
             if lora_targets and lora_r > 0:
                 # Load each shard to the correct position
                 for shard_id, tensor in shards.items():
-                    if hasattr(module, "load_lora_A"):
-                        module.load_lora_A(tensor.to(device), shard_id)
+                    load_lora_A = getattr(module, "load_lora_A", None)
+                    if callable(load_lora_A):
+                        load_lora_A(tensor.to(device), shard_id)
         except Exception as e:
             print(f"Warning: Failed to load fused lora_A for {param_name}: {e}")
 

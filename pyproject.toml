@@ -57,6 +57,27 @@ line-length = 120
 target-version = "py310"
 extend-exclude = ["tests", "deployment/tests"]
 
+[tool.mypy]
+python_version = "3.10"
+
+# Keep CI usable by avoiding third-party stub churn and excluding
+# non-library entrypoints/tests from typechecking.
+ignore_missing_imports = true
+no_implicit_optional = false
+exclude = "^(tests/|deployment/|benchmark/|example.*\\.py$)"
+
+show_error_codes = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "nanovllm_voxcpm.layers.*",
+    "nanovllm_voxcpm.models.voxcpm.*",
+    "nanovllm_voxcpm.engine.model_runner",
+    "nanovllm_voxcpm.engine.sequence",
+]
+ignore_errors = true
+
 [tool.uv.extra-build-dependencies]
 flash-attn = [
     { requirement = "torch", match-runtime = true },

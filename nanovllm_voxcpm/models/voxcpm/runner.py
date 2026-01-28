@@ -63,7 +63,7 @@ class VoxCPMRunner(BaseModelRunner):
         self.vae.load_state_dict(vae_state_dict)
         torch.set_default_dtype(torch.bfloat16)
 
-    def make_dummy_inputs(self, batch_size: int, length: int) -> torch.Tensor:
+    def make_dummy_inputs(self, batch_size: int, length: int) -> dict[str, torch.Tensor]:
         return {
             "text_tokens": torch.zeros(batch_size * length, dtype=torch.int64),
             "feat": torch.zeros(batch_size * length, self.patch_size, self.feat_dim),
@@ -72,7 +72,7 @@ class VoxCPMRunner(BaseModelRunner):
             "cfg_value": torch.zeros(batch_size),
         }
 
-    def make_dummy_outputs(self, batch_size: int) -> torch.Tensor:
+    def make_dummy_outputs(self, batch_size: int) -> dict[str, torch.Tensor]:
         latents = torch.zeros(
             batch_size,
             self.patch_size,
