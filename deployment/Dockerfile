@@ -39,7 +39,7 @@ RUN python3 -m pip install --no-cache-dir -U pip \
 COPY . .
 
 # Install workspace packages from the frozen lockfile.
-RUN uv sync --all-packages --frozen --no-dev -v
+RUN uv sync --all-packages --no-dev -v
 
 ENV NANOVLLM_CACHE_DIR=/var/cache/nanovllm
 

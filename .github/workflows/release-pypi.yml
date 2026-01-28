@@ -7,13 +7,15 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    environment: pypi
+    environment:
+      name: pypi
     permissions:
       id-token: write
+      contents: read
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v7
@@ -23,9 +25,7 @@ jobs:
           activate-environment: true
 
       - name: Build sdist and wheel
-        run: |
-          uv pip install -U build
-          uv run python -m build
+        run: uv build
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        run: uv publish
