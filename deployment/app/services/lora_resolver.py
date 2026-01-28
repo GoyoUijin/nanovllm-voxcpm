@@ -48,11 +48,11 @@ def _extract_if_archive(src_file: Path, dst_dir: Path) -> Path:
     if name.endswith(".zip"):
         _ensure_empty_dir(dst_dir)
         with zipfile.ZipFile(src_file) as zf:
-            for member in zf.infolist():
+            for zip_member in zf.infolist():
                 # Avoid ZipSlip.
-                out_path = (dst_dir / member.filename).resolve()
+                out_path = (dst_dir / zip_member.filename).resolve()
                 if not str(out_path).startswith(str(dst_dir.resolve()) + os.sep):
-                    raise RuntimeError(f"Refusing to extract zip member outside target dir: {member.filename}")
+                    raise RuntimeError(f"Refusing to extract zip member outside target dir: {zip_member.filename}")
             zf.extractall(dst_dir)
         return dst_dir
 
@@ -60,10 +60,10 @@ def _extract_if_archive(src_file: Path, dst_dir: Path) -> Path:
         _ensure_empty_dir(dst_dir)
         with tarfile.open(src_file, "r:*") as tf:
             dst_resolved = dst_dir.resolve()
-            for member in tf.getmembers():
-                out_path = (dst_dir / member.name).resolve()
+            for tar_member in tf.getmembers():
+                out_path = (dst_dir / tar_member.name).resolve()
                 if not str(out_path).startswith(str(dst_resolved) + os.sep):
-                    raise RuntimeError(f"Refusing to extract tar member outside target dir: {member.name}")
+                    raise RuntimeError(f"Refusing to extract tar member outside target dir: {tar_member.name}")
             tf.extractall(dst_dir)
         return dst_dir
 
@@ -138,10 +138,10 @@ def resolve_lora_uri(*, uri: str, cache_dir: str, expected_sha256: str | None) -
     # Fast path: already resolved.
     if done_marker.exists():
         if resolved_path_marker.exists():
-            rel = resolved_path_marker.read_text(encoding="utf-8").strip()
-            if not rel:
+            rel_str = resolved_path_marker.read_text(encoding="utf-8").strip()
+            if not rel_str:
                 raise RuntimeError("Invalid resolver cache: empty .resolved_path")
-            return ResolvedArtifact(local_path=(dst_root / rel).resolve(), cache_key=key)
+            return ResolvedArtifact(local_path=(dst_root / rel_str).resolve(), cache_key=key)
         # Backward compatibility: older cache entries.
         return ResolvedArtifact(local_path=(dst_root / "artifact").resolve(), cache_key=key)
 
@@ -193,8 +193,8 @@ def resolve_lora_uri(*, uri: str, cache_dir: str, expected_sha256: str | None) -
                         obj_key = obj.get("Key")
                         if not obj_key or obj_key.endswith("/"):
                             continue
-                        rel = Path(obj_key[len(key_prefix) :])
-                        out_path = artifact_root / rel
+                        rel_path = Path(obj_key[len(key_prefix) :])
+                        out_path = artifact_root / rel_path
                         out_path.parent.mkdir(parents=True, exist_ok=True)
                         s3.download_file(bucket, obj_key, str(out_path))
                 resolved_path = artifact_root
@@ -231,7 +231,6 @@ def resolve_lora_uri(*, uri: str, cache_dir: str, expected_sha256: str | None) -
                     repo_id=repo_id,
                     revision=revision,
                     local_dir=str(artifact_root / "repo"),
-                    local_dir_use_symlinks=False,
                     allow_patterns=allow_patterns,
                 )
             )
