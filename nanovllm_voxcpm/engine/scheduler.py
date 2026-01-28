@@ -66,11 +66,8 @@ from nanovllm_voxcpm.config import Config
 from nanovllm_voxcpm.engine.sequence import Sequence, SequenceStatus
 from nanovllm_voxcpm.engine.block_manager import BlockManager
 
-import uuid
-
 
 class Scheduler:
-
     def __init__(self, config: Config):
         self.max_num_seqs = config.max_num_seqs
         self.max_num_batched_tokens = config.max_num_batched_tokens

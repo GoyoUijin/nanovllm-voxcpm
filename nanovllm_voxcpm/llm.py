@@ -1,13 +1,11 @@
 import os
 import json
+import importlib.util
 from huggingface_hub import snapshot_download
 from typing import List, Optional
 import asyncio
 
-try:
-    # check if flash-attn is installed
-    import flash_attn
-except ImportError:
+if importlib.util.find_spec("flash_attn") is None:
     raise ImportError(
         "flash-attn is not installed. Please install it with `pip install flash-attn --no-build-isolation`"
     )

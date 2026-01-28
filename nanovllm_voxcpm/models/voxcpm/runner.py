@@ -110,8 +110,6 @@ class VoxCPMRunner(BaseModelRunner):
         feat_masks = []
         temperatures = []
         cfg_values = []
-
-        ret_new_latents = []
         for seq in seqs:
             payload: VoxCPMPayload = seq.custom_payload
             assert payload.text_tokens.shape[0] == payload.feats.shape[0]
