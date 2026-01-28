@@ -38,12 +38,12 @@ def build_lifespan(cfg: ServiceConfig):
 
         server = AsyncVoxCPMServerPool(
             model_path=cfg.model_path,
-            max_num_batched_tokens=8192,
-            max_num_seqs=16,
-            max_model_len=4096,
-            gpu_memory_utilization=0.95,
-            enforce_eager=False,
-            devices=[0],
+            max_num_batched_tokens=cfg.server_pool.max_num_batched_tokens,
+            max_num_seqs=cfg.server_pool.max_num_seqs,
+            max_model_len=cfg.server_pool.max_model_len,
+            gpu_memory_utilization=cfg.server_pool.gpu_memory_utilization,
+            enforce_eager=cfg.server_pool.enforce_eager,
+            devices=list(cfg.server_pool.devices),
             lora_config=lora_config,
         )
         app.state.server = server

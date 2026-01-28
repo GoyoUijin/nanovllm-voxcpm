@@ -41,6 +41,14 @@ Environment variables:
   - `NANOVLLM_LORA_SHA256` (optional; full-file checksum)
   - `NANOVLLM_CACHE_DIR` (default `~/.cache/nanovllm`)
 
+- Server pool startup (read at startup):
+  - `NANOVLLM_SERVERPOOL_MAX_NUM_BATCHED_TOKENS` (int, default `8192`)
+  - `NANOVLLM_SERVERPOOL_MAX_NUM_SEQS` (int, default `16`)
+  - `NANOVLLM_SERVERPOOL_MAX_MODEL_LEN` (int, default `4096`)
+  - `NANOVLLM_SERVERPOOL_GPU_MEMORY_UTILIZATION` (float, default `0.95`, allowed `(0, 1]`)
+  - `NANOVLLM_SERVERPOOL_ENFORCE_EAGER` (bool, default `false`; accepts `1/0,true/false,yes/no,on/off`)
+  - `NANOVLLM_SERVERPOOL_DEVICES` (comma-separated ints, default `0`; e.g. `0,1`)
+
 LoRA checkpoint layout (recommended):
 
 ```
