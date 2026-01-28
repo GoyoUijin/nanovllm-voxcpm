@@ -12,6 +12,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.distributed as dist
 
+from typing import Optional
+
+from nanovllm_voxcpm.utils.loader import ShardId
+from nanovllm_voxcpm.utils.torch_param import set_weight_loader
+
 
 def divide(numerator, denominator):
     assert numerator % denominator == 0
@@ -19,6 +24,7 @@ def divide(numerator, denominator):
 
 
 class LoRAQKVParallelLinear(nn.Module):
+    lora_scaling: torch.Tensor
     """
     QKV fused layer + optimized LoRA implementation
 
@@ -38,7 +44,7 @@ class LoRAQKVParallelLinear(nn.Module):
         bias: bool = False,
         lora_r: int = 0,
         lora_alpha: float = 16.0,
-        lora_targets: list = None,  # ["q", "k", "v"]
+        lora_targets: Optional[list[str]] = None,  # ["q", "k", "v"]
     ):
         super().__init__()
         self.tp_size = dist.get_world_size()
@@ -57,10 +63,10 @@ class LoRAQKVParallelLinear(nn.Module):
 
         # Base weights
         self.weight = nn.Parameter(torch.empty(output_size, hidden_size))
-        self.weight.weight_loader = self._base_weight_loader
+        set_weight_loader(self.weight, self._base_weight_loader)
         if bias:
             self.bias = nn.Parameter(torch.empty(output_size))
-            self.bias.weight_loader = self._base_weight_loader
+            set_weight_loader(self.bias, self._base_weight_loader)
         else:
             self.register_parameter("bias", None)
 
@@ -78,13 +84,13 @@ class LoRAQKVParallelLinear(nn.Module):
             # Separated output projections (need to be sharded by TP)
             if "q" in self.lora_targets:
                 self.lora_B_q = nn.Parameter(torch.zeros(self.q_size, lora_r))
-                self.lora_B_q.weight_loader = self._lora_B_weight_loader
+                set_weight_loader(self.lora_B_q, self._lora_B_weight_loader)
             if "k" in self.lora_targets:
                 self.lora_B_k = nn.Parameter(torch.zeros(self.kv_size, lora_r))
-                self.lora_B_k.weight_loader = self._lora_B_weight_loader
+                set_weight_loader(self.lora_B_k, self._lora_B_weight_loader)
             if "v" in self.lora_targets:
                 self.lora_B_v = nn.Parameter(torch.zeros(self.kv_size, lora_r))
-                self.lora_B_v.weight_loader = self._lora_B_weight_loader
+                set_weight_loader(self.lora_B_v, self._lora_B_weight_loader)
 
             # Use buffer to store scaling (CUDA Graph compatible)
             self._base_scaling = lora_alpha / lora_r
@@ -96,7 +102,7 @@ class LoRAQKVParallelLinear(nn.Module):
         self,
         param: nn.Parameter,
         loaded_weight: torch.Tensor,
-        loaded_shard_id: str = None,
+        loaded_shard_id: ShardId | None = None,
     ):
         """Base weight loader (supports Q/K/V sharding)"""
         if loaded_shard_id is None:
@@ -180,6 +186,7 @@ class LoRAQKVParallelLinear(nn.Module):
 
 
 class LoRAMergedColumnParallelLinear(nn.Module):
+    lora_scaling: torch.Tensor
     """
     MergedColumnParallelLinear (gate_up_proj) + optimized LoRA
 
@@ -189,11 +196,11 @@ class LoRAMergedColumnParallelLinear(nn.Module):
     def __init__(
         self,
         input_size: int,
-        output_sizes: list,
+        output_sizes: list[int],
         bias: bool = False,
         lora_r: int = 0,
         lora_alpha: float = 16.0,
-        lora_targets: list = None,  # [0, 1] for gate and up
+        lora_targets: Optional[list[int]] = None,  # [0, 1] for gate and up
     ):
         super().__init__()
         self.tp_size = dist.get_world_size()
@@ -206,10 +213,10 @@ class LoRAMergedColumnParallelLinear(nn.Module):
 
         # Base weights
         self.weight = nn.Parameter(torch.empty(shard_total_output, input_size))
-        self.weight.weight_loader = self._base_weight_loader
+        set_weight_loader(self.weight, self._base_weight_loader)
         if bias:
             self.bias = nn.Parameter(torch.empty(shard_total_output))
-            self.bias.weight_loader = self._base_weight_loader
+            set_weight_loader(self.bias, self._base_weight_loader)
         else:
             self.register_parameter("bias", None)
 
@@ -228,7 +235,7 @@ class LoRAMergedColumnParallelLinear(nn.Module):
             for i, target_idx in enumerate(self.lora_targets):
                 shard_size = self.shard_output_sizes[target_idx]
                 lora_B = nn.Parameter(torch.zeros(shard_size, lora_r))
-                lora_B.weight_loader = self._lora_B_weight_loader
+                set_weight_loader(lora_B, self._lora_B_weight_loader)
                 setattr(self, f"lora_B_{target_idx}", lora_B)
 
             self._base_scaling = lora_alpha / lora_r
@@ -240,12 +247,14 @@ class LoRAMergedColumnParallelLinear(nn.Module):
         self,
         param: nn.Parameter,
         loaded_weight: torch.Tensor,
-        loaded_shard_id: int = None,
+        loaded_shard_id: ShardId | None = None,
     ):
         """Base weight loader"""
         if loaded_shard_id is None:
             param.data.copy_(loaded_weight)
             return
+
+        assert isinstance(loaded_shard_id, int)
 
         param_data = param.data
         shard_offset = sum(self.shard_output_sizes[:loaded_shard_id])
@@ -302,6 +311,7 @@ class LoRAMergedColumnParallelLinear(nn.Module):
 
 
 class LoRARowParallelLinear(nn.Module):
+    lora_scaling: torch.Tensor
     """
     RowParallelLinear (o_proj, down_proj) + LoRA
 
@@ -325,10 +335,10 @@ class LoRARowParallelLinear(nn.Module):
 
         # Base weights (input dimension sharded)
         self.weight = nn.Parameter(torch.empty(output_size, self.shard_input_size))
-        self.weight.weight_loader = self._base_weight_loader
+        set_weight_loader(self.weight, self._base_weight_loader)
         if bias:
             self.bias = nn.Parameter(torch.empty(output_size))
-            self.bias.weight_loader = self._base_weight_loader
+            set_weight_loader(self.bias, self._base_weight_loader)
         else:
             self.register_parameter("bias", None)
 
@@ -339,7 +349,7 @@ class LoRARowParallelLinear(nn.Module):
         if lora_r > 0:
             # lora_A input dimension needs to be sharded
             self.lora_A = nn.Parameter(torch.zeros(lora_r, self.shard_input_size))
-            self.lora_A.weight_loader = self._lora_A_weight_loader
+            set_weight_loader(self.lora_A, self._lora_A_weight_loader)
 
             # lora_B output dimension not sharded
             self.lora_B = nn.Parameter(torch.zeros(output_size, lora_r))
@@ -391,6 +401,7 @@ class LoRARowParallelLinear(nn.Module):
 
 
 class LoRALinear(nn.Module):
+    lora_scaling: torch.Tensor
     """
     Simple LoRA Linear layer for projection layers (no tensor parallel)
 
