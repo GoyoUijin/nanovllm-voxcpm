@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=61"]
+requires = ["setuptools>=61", "setuptools-scm[toml]>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "nano-vllm-voxcpm"
-version = "1.0.0"
+dynamic = ["version"]
 authors = [{ name = "Guoyang Zeng" }]
 classifiers = ["License :: OSI Approved :: MIT License"]
 readme = "README.md"
@@ -29,6 +29,16 @@ Homepage="https://github.com/a710128/nanovllm-voxcpm"
 
 [tool.setuptools]
 license-files = ["LICENSE"]
+
+[tool.setuptools_scm]
+# Derive the package version from git tags.
+# - Tags are currently prefixed with "v" (e.g. v1.0.0rc3); strip the prefix.
+# - Use post-release scheme for commits after a tag, and keep local version info.
+tag_regex = "^(?:v)?(?P<version>.*)$"
+version_scheme = "post-release"
+local_scheme = "node-and-date"
+write_to = "nanovllm_voxcpm/_version.py"
+fallback_version = "0.0.0"
 
 [tool.setuptools.packages.find]
 where = ["."]
