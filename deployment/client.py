@@ -4,7 +4,7 @@ from pathlib import Path
 
 import aiohttp
 
-API_BASE = "http://localhost:7071"
+API_BASE = "http://localhost:8000"
 
 
 async def encode_latents(session: aiohttp.ClientSession, wav_path: Path, wav_format: str) -> dict:
