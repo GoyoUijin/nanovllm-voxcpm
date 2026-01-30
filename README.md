@@ -11,7 +11,21 @@ This repository contains a Python package (`nanovllm_voxcpm/`) plus an optional 
 
 ## Installation
 
-Nano-vLLM-VoxCPM is not available on PyPI yet. Install from source.
+### Install from PyPI
+
+Core package:
+
+```bash
+pip install nano-vllm-voxcpm
+```
+
+Or with `uv`:
+
+```bash
+uv pip install nano-vllm-voxcpm
+```
+
+Note: the optional FastAPI demo service (`deployment/`) is not published on PyPI.
 
 ### Prerequisites
 
@@ -21,7 +35,7 @@ Nano-vLLM-VoxCPM is not available on PyPI yet. Install from source.
 
 The runtime is GPU-centric (Triton + FlashAttention). CPU-only execution is not supported.
 
-### Install with uv (recommended)
+### Install from source (dev)
 
 This repo uses `uv` and includes a lockfile (`uv.lock`).
 
