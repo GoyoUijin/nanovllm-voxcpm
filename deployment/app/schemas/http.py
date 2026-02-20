@@ -128,3 +128,14 @@ class GenerateRequest(BaseModel):
     max_generate_length: int = Field(2000, ge=1, description="Maximum number of model generation steps.")
     temperature: float = Field(1.0, ge=0.0, description="Sampling temperature.")
     cfg_value: float = Field(1.5, ge=0.0, description="Classifier-free guidance scale.")
+
+
+class TTSRequest(BaseModel):
+    """Request body for POST /v1/tts."""
+
+    text: str = Field(..., description="Text to synthesize.")
+    voice: str = Field(..., description="Voice of generated audio.")
+
+    max_generate_length: int = Field(2000, ge=1, description="Maximum number of model generation steps.")
+    temperature: float = Field(1.0, ge=0.0, description="Sampling temperature.")
+    cfg_value: float = Field(1.5, ge=0.0, description="Classifier-free guidance scale.")

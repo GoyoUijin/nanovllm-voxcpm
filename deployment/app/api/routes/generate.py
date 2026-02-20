@@ -15,7 +15,7 @@ from app.core.metrics import (
     GENERATE_STREAM_BYTES_TOTAL,
     GENERATE_TTFB_SECONDS,
 )
-from app.schemas.http import ErrorResponse, GenerateRequest
+from app.schemas.http import ErrorResponse, GenerateRequest, TTSRequest
 from app.services.mp3 import stream_mp3
 from nanovllm_voxcpm.models.voxcpm.server import AsyncVoxCPMServerPool
 
@@ -159,6 +159,102 @@ async def generate(
     return StreamingResponse(
         body(),
         media_type="audio/mpeg",
+        headers={
+            "X-Audio-Sample-Rate": str(sample_rate),
+            "X-Audio-Channels": str(channels),
+        },
+    )
+
+@router.post(
+    "/v1/tts",
+    response_class=StreamingResponse,
+    summary="Generate audio (streaming pcm16)",
+    responses={
+        200: {
+            "description": "pcm16 byte stream",
+            "content": {
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"},
+                }
+            },
+            "headers": {
+                "X-Audio-Sample-Rate": {
+                    "description": "Audio sample rate in Hz.",
+                    "schema": {"type": "integer"},
+                },
+                "X-Audio-Channels": {
+                    "description": "Number of audio channels.",
+                    "schema": {"type": "integer"},
+                },
+            },
+        },
+        400: {"description": "Invalid input", "model": ErrorResponse},
+        422: {
+            "description": "Validation error",
+            "content": {"application/json": {"schema": {"$ref": "#/components/schemas/HTTPValidationError"}}},
+        },
+        503: {"description": "Model server not ready", "model": ErrorResponse},
+        500: {"description": "Internal error", "model": ErrorResponse},
+    },
+)
+async def tts(
+    req: TTSRequest,
+    request: Request,
+    server: AsyncVoxCPMServerPool = Depends(get_server),
+) -> StreamingResponse:
+    """Generate speech audio as a streamed MP3 byte stream.
+
+    The response is streamed and may terminate early if the client disconnects or
+    an internal error occurs after streaming has started.
+    """
+
+    cfg = getattr(request.app.state, "cfg", None)
+    if cfg is None:
+        raise HTTPException(status_code=500, detail="server misconfigured: missing app.state.cfg")
+
+    model_info = await server.get_model_info()
+    sample_rate = int(model_info["sample_rate"])
+    channels = int(model_info["channels"])
+    if channels != 1:
+        raise HTTPException(status_code=500, detail=f"Only mono is supported (channels={channels})")
+    
+    voices = getattr(request.app.state, "voices", None)
+    if voices is None:
+        raise HTTPException(status_code=500, detail="server misconfigured: missing app.state.voices")
+    
+    voice = voices.get(req.voice)
+    if voice is None:
+        raise HTTPException(status_code=400, detail=f"Voice '{req.voice}' not exists.")
+
+    prompt_latents = voice.prompt_latents
+    prompt_text = voice.prompt_text
+
+    start_t = time.perf_counter()
+    ttfb_recorded = False
+
+    async def pcm16_chunks() -> AsyncIterator[NDArray[np.float32]]:
+        nonlocal ttfb_recorded
+        async for chunk in server.generate(
+            target_text=req.text,
+            prompt_latents=prompt_latents,
+            prompt_text=prompt_text,
+            max_generate_length=req.max_generate_length,
+            temperature=req.temperature,
+            cfg_value=req.cfg_value,
+        ):
+            if not ttfb_recorded:
+                GENERATE_TTFB_SECONDS.observe(time.perf_counter() - start_t)
+                ttfb_recorded = True
+            GENERATE_AUDIO_SECONDS_TOTAL.inc(float(chunk.shape[0]) / float(sample_rate))
+            b = (chunk * 32767).astype(np.int16).tobytes()
+            GENERATE_STREAM_BYTES_TOTAL.inc(len(b))
+            yield b
+        if not ttfb_recorded:
+            GENERATE_TTFB_SECONDS.observe(time.perf_counter() - start_t)
+
+    return StreamingResponse(
+        pcm16_chunks(),
+        media_type="application/octet-stream",
         headers={
             "X-Audio-Sample-Rate": str(sample_rate),
             "X-Audio-Channels": str(channels),

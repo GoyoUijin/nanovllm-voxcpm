@@ -80,6 +80,9 @@ class ServerPoolStartupConfig:
     enforce_eager: bool
     devices: tuple[int, ...]
 
+@dataclass(frozen=True)
+class VoiceConfig:
+    dir: str
 
 @dataclass(frozen=True)
 class ServiceConfig:
@@ -87,6 +90,7 @@ class ServiceConfig:
     mp3: Mp3Config
     lora: LoRAStartupConfig
     server_pool: ServerPoolStartupConfig
+    voice: VoiceConfig | None
 
 
 def load_config() -> ServiceConfig:
@@ -116,6 +120,8 @@ def load_config() -> ServiceConfig:
     pool_enforce_eager = _get_bool_env("NANOVLLM_SERVERPOOL_ENFORCE_EAGER", False)
     pool_devices = _get_int_list_env("NANOVLLM_SERVERPOOL_DEVICES", (0,))
 
+    voices_dir = os.environ.get("NANOVLLM_VOICES_DIR", None)
+
     if inference_timesteps <= 0:
         raise RuntimeError("NANOVLLM_INFERENCE_TIMESTEPS must be > 0")
     if pool_max_num_batched_tokens <= 0:
@@ -144,4 +150,5 @@ def load_config() -> ServiceConfig:
             enforce_eager=pool_enforce_eager,
             devices=pool_devices,
         ),
+        voice=VoiceConfig(dir=voices_dir)
     )

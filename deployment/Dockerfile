@@ -30,14 +30,9 @@ RUN apt-get update \
 RUN python3 -m pip install --no-cache-dir uv
 
 ENV NANOVLLM_CACHE_DIR=/var/cache/nanovllm
-RUN useradd -m -u 10001 appuser \
- && mkdir -p "$NANOVLLM_CACHE_DIR" \
- && chown -R appuser:appuser "$NANOVLLM_CACHE_DIR" \
- && chown -R appuser:appuser /app
+RUN mkdir -p "$NANOVLLM_CACHE_DIR"
 
-USER appuser
-
-COPY --chown=appuser:appuser . .
+COPY . .
 
 # Install workspace packages from the frozen lockfile.
 RUN uv sync --all-packages --no-dev -v --compile-bytecode --no-cache --no-editable

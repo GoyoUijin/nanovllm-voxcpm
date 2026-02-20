@@ -16,6 +16,7 @@ from app.services.lora_resolver import (
     normalize_lora_checkpoint_path,
     resolve_lora_uri,
 )
+from app.services.voice_loader import load_voices
 
 
 def build_lifespan(cfg: ServiceConfig):
@@ -67,6 +68,10 @@ def build_lifespan(cfg: ServiceConfig):
                 LORA_LOADED.labels(lora_id=str(cfg.lora.lora_id)).set(1)
                 LORA_LOAD_SECONDS.observe(time.perf_counter() - t0)
                 app.state.lora.update({"loaded": True})
+            
+            if cfg.voice.dir:
+                voices_map = await load_voices(server, cfg.voice.dir)
+                app.state.voices = voices_map
 
             app.state.ready = True
             yield
