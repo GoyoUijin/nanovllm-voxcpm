@@ -38,6 +38,7 @@ def build_lifespan(cfg: ServiceConfig):
 
         server = AsyncVoxCPMServerPool(
             model_path=cfg.model_path,
+            inference_timesteps=cfg.server_pool.inference_timesteps,
             max_num_batched_tokens=cfg.server_pool.max_num_batched_tokens,
             max_num_seqs=cfg.server_pool.max_num_seqs,
             max_model_len=cfg.server_pool.max_model_len,
